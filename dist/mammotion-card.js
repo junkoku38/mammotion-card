@@ -7,7 +7,7 @@
  * https://github.com/junkoku38/mammotion-card
  */
 
-const CARD_VERSION = "1.1.0";
+const CARD_VERSION = "1.2.0";
 
 console.info(
   `%c MAMMOTION-CARD %c v${CARD_VERSION} `,
@@ -146,6 +146,33 @@ class MammotionCard extends HTMLElement {
     return out;
   }
 
+
+  async _mountCamera() {
+    const c = this._config;
+    if (!c.camera || !this._hass || !this._els.camSlot) return;
+    const host = this._els.camSlot;
+    if (host._mounted) return;
+    try {
+      if (typeof window.loadCardHelpers !== "function") throw new Error("loadCardHelpers indisponible");
+      const helpers = await window.loadCardHelpers();
+      const el = helpers.createCardElement({
+        type: "picture-entity", entity: c.camera, camera_view: "live",
+        show_name: false, show_state: false, tap_action: { action: "none" },
+      });
+      el.hass = this._hass;
+      host.innerHTML = "";
+      host.appendChild(el);
+      host._mounted = true;
+      host._camEl = el;
+    } catch (err) {
+      console.warn("mammotion-card : camera indisponible", err);
+      // repli : image statique
+      const cam = this._st(c.camera);
+      const pic = cam?.attributes?.entity_picture;
+      if (pic) { host.innerHTML = `<img src="${pic}" style="width:100%;border-radius:12px"/>`; host._mounted = true; }
+    }
+  }
+
   _build() {
     this.shadowRoot.innerHTML = `<style>${MammotionCard.styles}</style>${this._template()}`;
     this._built = true;
@@ -266,6 +293,8 @@ class MammotionCard extends HTMLElement {
       { k: "Durée", v: this._dur(this._num(c.session_duration)) },
       { k: "Lame", v: this._num(c.blade_height) != null ? `${this._fmt(this._num(c.blade_height), 0)} mm` : "—" },
       { k: "RTK", v: rtk || "—" },
+      { k: "Cycles", v: this._num(c.battery_cycles) != null ? `${Math.round(this._num(c.battery_cycles))}` : "—" },
+      { k: "Total", v: this._num(c.total_work_time) != null ? `${this._fmt(this._num(c.total_work_time), 0)} h` : "—" },
     ];
     e.cells.innerHTML = cells.map((x) => `<div class="bc4"><span>${esc(x.k)}</span><b>${esc(x.v)}</b></div>`).join("");
     const err = this._txt(c.error, null);
@@ -278,6 +307,41 @@ class MammotionCard extends HTMLElement {
     const wear = this._num(c.blade_wear), km = this._num(c.odometer);
     e.footRight.textContent = km != null ? `${this._fmt(km, 0)} km` : wear != null ? `Lames · ${this._fmt(wear, 0)} %` : "";
     if (!this._history) this._renderChart();
+
+    /* Camera */
+    if (c.camera && this._els.camSlot) {
+      if (this._els.camSlot._camEl) this._els.camSlot._camEl.hass = this._hass;
+      else this._mountCamera();
+    }
+
+    /* Boutons supplementaires */
+    if (this._els.extraBtns) {
+      const btns = [];
+      if (c.edge_button) btns.push({ label: "Bordure", id: c.edge_button });
+      if (c.leave_dock_button) btns.push({ label: "Quitter la base", id: c.leave_dock_button });
+      if (c.restart_button) btns.push({ label: "Redémarrer", id: c.restart_button, ghost: true });
+      this._els.extraBtns.innerHTML = btns.map((b, i) =>
+        `<div class="eb${b.ghost ? " ghost" : ""}" data-i="${i}">${esc(b.label)}</div>`
+      ).join("");
+      this._els.extraBtns.classList.toggle("hidden", !btns.length);
+      this._els.extraBtns.querySelectorAll(".eb").forEach((el) => {
+        el.addEventListener("click", (ev) => {
+          ev.stopPropagation();
+          const b = btns[Number(el.dataset.i)];
+          const d = domainOf(b.id);
+          if (d === "button" || d === "input_button") this._hass.callService(d, "press", { entity_id: b.id });
+        });
+      });
+    }
+
+    /* Cycles et temps total dans le pied */
+    const cycles = this._num(c.battery_cycles);
+    const workTime = this._num(c.total_work_time);
+    const footBits = [];
+    if (km != null) footBits.push(`${this._fmt(km, 0)} km`);
+    if (workTime != null) footBits.push(`${this._fmt(workTime, 0)} h travail`);
+    if (cycles != null) footBits.push(`${Math.round(cycles)} cycles`);
+    e.footRight.textContent = footBits.join(" · ");
   }
 }
 
@@ -337,10 +401,24 @@ ha-card::after{content:"";position:absolute;left:20px;right:20px;top:0;height:1p
 .zp{font-size:10.5px;font-weight:600;width:34px;text-align:right;color:rgba(255,255,255,.62);font-variant-numeric:tabular-nums;}
 .zp.done{color:var(--mm-green);}
 .zs{font-size:9.5px;width:46px;text-align:right;color:rgba(255,255,255,.3);font-variant-numeric:tabular-nums;}
-.bg4{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-top:18px;position:relative;z-index:1;}
+.bg4{display:grid;grid-template-columns:repeat(auto-fit,minmax(70px,1fr));gap:6px;margin-top:18px;position:relative;z-index:1;}
 .bc4{background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.075);border-radius:12px;padding:9px 5px;text-align:center;}
 .bc4 span{display:block;font-size:7.5px;letter-spacing:.8px;text-transform:uppercase;color:rgba(255,255,255,.38);font-weight:600;}
 .bc4 b{display:block;font-size:12.5px;font-weight:600;margin-top:5px;font-variant-numeric:tabular-nums;}
+.camw{margin-top:14px;position:relative;z-index:1;}
+.cam-slot{border-radius:14px;overflow:hidden;border:1px solid rgba(255,255,255,.07);
+  --ha-card-background:transparent;--ha-card-border-width:0;--ha-card-box-shadow:none;--ha-card-border-radius:0;}
+.cam-slot:empty{display:none;}
+.cam-slot > *{display:block;width:100%;}
+.cam-slot img{display:block;width:100%;border-radius:12px;}
+
+.extra-btns{display:flex;gap:7px;margin-top:14px;position:relative;z-index:1;}
+.extra-btns.hidden{display:none;}
+.eb{flex:1;text-align:center;font-size:11px;font-weight:600;padding:10px 0;border-radius:12px;
+  background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.10);color:rgba(255,255,255,.72);cursor:pointer;transition:.15s;}
+.eb:hover{background:rgba(255,255,255,.1);}
+.eb.ghost{background:rgba(255,107,92,.10);border-color:rgba(255,107,92,.28);color:#ffb3aa;}
+
 .sf{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:15px;padding-top:12px;border-top:1px solid rgba(255,255,255,.07);font-size:10px;color:rgba(255,255,255,.4);position:relative;z-index:1;}
 .sf .left{display:flex;align-items:center;gap:6px;min-width:0;}
 .sf .left i{width:5px;height:5px;border-radius:50%;background:var(--mm-green);flex-shrink:0;}
@@ -357,6 +435,7 @@ const FLAT_KEYS = [
   "name","mower","battery","progress","remaining_time","session_duration",
   "area","blade_height","satellites","rtk_status","error","error_code",
   "odometer","blade_wear","speed","start_button","pause_button","dock_button",
+  "camera","restart_button","edge_button","leave_dock_button","battery_cycles","total_work_time",
   "hours","points","refresh","show_battery_chart","show_phases",
 ];
 const MANAGED_KEYS = [...FLAT_KEYS, "type", "zones"];
@@ -371,6 +450,12 @@ const LABELS = {
   odometer: "Kilométrage total", blade_wear: "Usure des lames", speed: "Vitesse",
   start_button: "Bouton Démarrer (repli)", pause_button: "Bouton Pause (repli)",
   dock_button: "Bouton Base (repli)",
+  camera: "Caméra (flux live)",
+  restart_button: "Bouton Redémarrer",
+  edge_button: "Bouton Bordure",
+  leave_dock_button: "Bouton Quitter la base",
+  battery_cycles: "Cycles de batterie",
+  total_work_time: "Temps de travail total",
   hours: "Fenêtre d'historique", points: "Échantillons", refresh: "Relecture",
   show_battery_chart: "Afficher la courbe de batterie", show_phases: "Afficher les phases",
 };
@@ -406,14 +491,20 @@ const SCHEMA = [
       { name: "odometer", selector: { entity: { filter: [{ domain: "sensor" }] } } },
       { name: "blade_wear", selector: { entity: { filter: [{ domain: "sensor" }] } } },
       { name: "speed", selector: { entity: { filter: [{ domain: "sensor" }] } } },
+      { name: "battery_cycles", selector: { entity: { filter: [{ domain: "sensor" }] } } },
+      { name: "total_work_time", selector: { entity: { filter: [{ domain: "sensor" }] } } },
     ],
   },
+  { name: "camera", selector: { entity: { filter: [{ domain: "camera" }] } } },
   {
     type: "expandable", name: "", title: "Boutons (repli)", icon: "mdi:gesture-tap-button",
     schema: [
       { name: "start_button", selector: { entity: { filter: [{ domain: ["button", "input_button"] }] } } },
       { name: "pause_button", selector: { entity: { filter: [{ domain: ["button", "input_button"] }] } } },
       { name: "dock_button", selector: { entity: { filter: [{ domain: ["button", "input_button"] }] } } },
+      { name: "edge_button", selector: { entity: { filter: [{ domain: "button" }] } } },
+      { name: "leave_dock_button", selector: { entity: { filter: [{ domain: "button" }] } } },
+      { name: "restart_button", selector: { entity: { filter: [{ domain: "button" }] } } },
     ],
   },
   {
