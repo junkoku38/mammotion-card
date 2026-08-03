@@ -1,0 +1,332 @@
+/**
+ * Mammotion Card
+ * Carte Lovelace pour tondeuse robot Mammotion (Luba, Luba 2 AWD, Yuka).
+ * Double anneau progression / batterie, phases, courbe de session,
+ * zones et contrôle segmenté.
+ *
+ * https://github.com/junkoku38/mammotion-card
+ */
+
+const CARD_VERSION = "1.0.0";
+
+console.info(
+  `%c MAMMOTION-CARD %c v${CARD_VERSION} `,
+  "color:#101610;background:#c9f0a8;font-weight:700;border-radius:3px 0 0 3px;padding:2px 6px",
+  "color:#c9f0a8;background:#12151c;border-radius:0 3px 3px 0;padding:2px 6px"
+);
+
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+
+const I = {
+  mower: `<path d="M19.5 12c.28 0 .55.03.81.08L18.4 6.05A3 3 0 0 0 15.56 4H8.44a3 3 0 0 0-2.84 2.05L3.69 12.1c.26-.06.53-.1.81-.1A3.5 3.5 0 0 1 8 15.5c0 .17-.01.33-.04.5h8.08a3.5 3.5 0 0 1 3.46-4zM7.5 6h9l1.33 4H6.17L7.5 6zM4.5 13a2.5 2.5 0 1 0 0 5 2.5 2.5 0 0 0 0-5zm15 0a2.5 2.5 0 1 0 0 5 2.5 2.5 0 0 0 0-5z"/>`,
+  alert: `<path d="M12 2 1 21h22L12 2zm0 5 7.5 12.9h-15L12 7zm-1 4v4h2v-4h-2zm0 5v2h2v-2h-2z"/>`,
+};
+
+const COL = { progress: "#c9f0a8", battery: "#7fb3ff", warn: "#ffc76b", alert: "#ff6b5c", dim: "rgba(255,255,255,.3)" };
+
+const fireEvent = (node, type, detail = {}) => {
+  const ev = new Event(type, { bubbles: true, cancelable: false, composed: true });
+  ev.detail = detail;
+  node.dispatchEvent(ev);
+};
+
+const domainOf = (id) => (id ? String(id).split(".")[0] : null);
+const DEAD = ["unavailable", "unknown", "", null, undefined];
+const isDead = (v) => DEAD.includes(v);
+
+const norm = (s) => String(s ?? "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[\s-]/g, "_");
+
+const MOW_WORDS = ["mowing", "mow", "working", "tonte", "cutting"];
+const PAUSE_WORDS = ["paused", "pause", "suspend"];
+const DOCK_WORDS = ["docked", "charging", "home", "base", "idle", "standby"];
+const RETURN_WORDS = ["returning", "return", "going_home", "retour"];
+const ERR_WORDS = ["error", "fault", "stuck", "erreur"];
+
+function smoothPath(pts, tension = 0.28) {
+  if (pts.length < 2) return pts.length ? `M${pts[0][0]},${pts[0][1]}` : "";
+  let d = `M${pts[0][0].toFixed(1)},${pts[0][1].toFixed(1)}`;
+  for (let i = 0; i < pts.length - 1; i++) {
+    const p0 = i > 0 ? pts[i - 1] : pts[i];
+    const p1 = pts[i], p2 = pts[i + 1], p3 = i + 2 < pts.length ? pts[i + 2] : p2;
+    d += ` C${(p1[0] + ((p2[0] - p0[0]) * tension) / 2).toFixed(1)},${(p1[1] + ((p2[1] - p0[1]) * tension) / 2).toFixed(1)} ${(p2[0] - ((p3[0] - p1[0]) * tension) / 2).toFixed(1)},${(p2[1] - ((p3[1] - p1[1]) * tension) / 2).toFixed(1)} ${p2[0].toFixed(1)},${p2[1].toFixed(1)}`;
+  }
+  return d;
+}
+
+function buildSpark(values, w, h, color, gid) {
+  const clean = values.filter((v) => v != null && !Number.isNaN(v));
+  if (clean.length < 2) return `<svg class="sp" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none"><line x1="0" y1="${h/2}" x2="${w}" y2="${h/2}" stroke="rgba(255,255,255,.10)" stroke-width="1.4" stroke-dasharray="3 4" vector-effect="non-scaling-stroke"/></svg>`;
+  let lo = Math.min(...clean), hi = Math.max(...clean);
+  if (hi - lo < 1e-9) { hi += 1; lo -= 1; }
+  const n = values.length, pts = [];
+  values.forEach((v, i) => { if (v != null && !Number.isNaN(v)) pts.push([(i * w) / (n - 1), h - 3 - ((v - lo) / (hi - lo)) * (h - 6)]); });
+  const line = smoothPath(pts);
+  const area = `${line} L${pts[pts.length-1][0].toFixed(1)},${h} L${pts[0][0].toFixed(1)},${h} Z`;
+  const X = pts[pts.length-1][0].toFixed(1), Y = pts[pts.length-1][1].toFixed(1);
+  return `<svg class="sp" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none"><defs><linearGradient id="${gid}" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="${color}" stop-opacity=".22"/><stop offset="100%" stop-color="${color}" stop-opacity="0"/></linearGradient></defs><path d="${area}" fill="url(#${gid})"/><path d="${line}" fill="none" stroke="${color}" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke"/><line x1="${X}" y1="${Y}" x2="${X}" y2="${Y}" stroke="${color}" stroke-width="4.8" stroke-linecap="round" vector-effect="non-scaling-stroke"/></svg>`;
+}
+
+class MammotionCard extends HTMLElement {
+  constructor() { super(); this.attachShadow({ mode: "open" }); this._built = false; this._els = {}; this._history = null; this._fetchedAt = 0; this._busy = false; this._tick = null; }
+
+  setConfig(config) {
+    if (!config) throw new Error("Configuration invalide");
+    this._config = { name: "Tondeuse", hours: 4, points: 60, refresh: 300, show_battery_chart: true, show_phases: true, zones: [], ...config };
+    this._built = false; this._history = null; this._fetchedAt = 0;
+    if (this.shadowRoot) this.shadowRoot.innerHTML = "";
+  }
+
+  static getStubConfig(hass) {
+    const stub = { type: "custom:mammotion-card", name: "Tondeuse" };
+    if (!hass?.states) return stub;
+    const mower = Object.keys(hass.states).find((id) => id.startsWith("lawn_mower.") && !isDead(hass.states[id]?.state));
+    if (mower) { stub.mower = mower; const dev = hass.entities?.[mower]?.device_id;
+      const same = (re, d) => Object.keys(hass.states).find((id) => hass.entities?.[id]?.device_id === dev && re.test(id) && id.startsWith(d));
+      const batt = same(/batterie$|battery$/, "sensor."); if (batt) stub.battery = batt;
+      const prog = same(/progression$|progress$/, "sensor."); if (prog) stub.progress = prog;
+    }
+    return stub;
+  }
+
+  getCardSize() { return 12; }
+
+  set hass(hass) { const first = !this._hass; this._hass = hass; if (!this._built) this._build(); this._update(); if (first) this._fetchHistory(); }
+  connectedCallback() { this._tick = setInterval(() => { this._update(); if (Date.now() - this._fetchedAt > this._config.refresh * 1000) this._fetchHistory(); }, 20000); }
+  disconnectedCallback() { if (this._tick) clearInterval(this._tick); this._tick = null; }
+
+  _st(id) { return id && this._hass ? this._hass.states[id] : null; }
+  _num(id) { if (typeof id === "number") return id; const s = this._st(id); if (!s || isDead(s.state)) return null; const v = Number(s.state); return Number.isNaN(v) ? null : v; }
+  _txt(id, fallback = "—") { const s = this._st(id); if (!s || isDead(s.state)) return fallback; return s.state; }
+  _more(id) { if (id) fireEvent(this, "hass-more-info", { entityId: id }); }
+  _fmt(v, dec) { if (v == null || Number.isNaN(v)) return "—"; const d = dec !== undefined ? dec : Math.abs(v) >= 100 ? 0 : Math.abs(v) >= 10 ? 1 : 2; return new Intl.NumberFormat(this._hass?.locale?.language || "fr", { minimumFractionDigits: 0, maximumFractionDigits: d }).format(v); }
+  _hhmm(d) { return d.toLocaleTimeString(this._hass?.locale?.language || "fr", { hour: "2-digit", minute: "2-digit" }); }
+  _dur(min) { if (min == null || Number.isNaN(min)) return "—"; const m = Math.max(0, Math.round(min)); const h = Math.floor(m / 60); const r = m % 60; if (h === 0) return `${r} min`; return r === 0 ? `${h} h` : `${h} h ${String(r).padStart(2, "0")}`; }
+
+  _mowerState() { const c = this._config; const s = this._st(c.mower) || this._st(c.state_entity); return s ? norm(s.state) : ""; }
+  _mode() { const v = this._mowerState(); if (ERR_WORDS.some((w) => v.includes(w))) return "error"; if (PAUSE_WORDS.some((w) => v.includes(w))) return "paused"; if (RETURN_WORDS.some((w) => v.includes(w))) return "returning"; if (MOW_WORDS.some((w) => v.includes(w))) return "mowing"; if (DOCK_WORDS.some((w) => v.includes(w))) return "docked"; return "docked"; }
+  _progress() { const c = this._config; let p = this._num(c.progress); if (p != null) return Math.max(0, Math.min(1, p > 1 ? p / 100 : p)); return null; }
+  _remainingMinutes() { const c = this._config; const s = this._st(c.remaining_time); if (!s || isDead(s.state)) return null; const raw = s.state; if (/\d{4}-\d{2}-\d{2}T/.test(raw)) { const d = (new Date(raw).getTime() - Date.now()) / 60000; return d > 0 ? d : 0; } const v = Number(raw); if (Number.isNaN(v)) return null; return v; }
+
+  async _fetchHistory() {
+    const c = this._config; if (!c.battery || !c.show_battery_chart || this._busy || !this._hass) return;
+    this._busy = true;
+    try { const end = new Date(); const start = new Date(end.getTime() - c.hours * 3600 * 1000);
+      const res = await this._hass.callWS({ type: "history/history_during_period", start_time: start.toISOString(), end_time: end.toISOString(), minimal_response: true, no_attributes: true, entity_ids: [c.battery] });
+      this._history = { data: res || {}, start: start.getTime(), end: end.getTime() };
+    } catch (err) { console.warn("mammotion-card : historique indisponible", err); this._history = { data: {}, start: 0, end: 0 };
+    } finally { this._busy = false; this._fetchedAt = Date.now(); this._renderChart(); }
+  }
+
+  _series(entityId) {
+    const h = this._history; if (!h || !entityId || !h.data[entityId]) return null;
+    const samples = [];
+    h.data[entityId].forEach((p) => { const t = p.lu != null ? p.lu * 1000 : new Date(p.last_updated).getTime(); const v = Number(p.s !== undefined ? p.s : p.state); if (!Number.isNaN(v) && t) samples.push([t, v]); });
+    if (samples.length < 2) return null; samples.sort((a, b) => a[0] - b[0]);
+    const n = this._config.points, step = (h.end - h.start) / (n - 1);
+    const out = new Array(n).fill(null); let idx = 0, last = samples[0][1];
+    for (let i = 0; i < n; i++) { const t = h.start + i * step; let sum = 0, cnt = 0;
+      while (idx < samples.length && samples[idx][0] <= t) { last = samples[idx][1]; sum += samples[idx][1]; cnt++; idx++; }
+      out[i] = cnt ? sum / cnt : last; }
+    return out;
+  }
+
+  _build() {
+    this.shadowRoot.innerHTML = `<style>${MammotionCard.styles}</style>${this._template()}`;
+    this._built = true;
+    const $ = (s) => this.shadowRoot.querySelector(s); const e = this._els; const c = this._config;
+    e.card = $("ha-card"); e.dot = $(".ms .md"); e.name = $(".ms .nm"); e.state = $(".ms b"); e.chips = $(".mk");
+    e.ringProg = $(".dr .rp"); e.ringBatt = $(".dr .rb"); e.big = $(".mw"); e.bigSub = $(".msb"); e.legend = $(".mlg");
+    e.segw = $(".segw"); e.phases = $(".phw"); e.pbSlot = $(".phw .slot"); e.phRow = $(".phr");
+    e.chartMeta = $(".chartw .est"); e.chartSlot = $(".chartw .slot");
+    e.zones = $(".zrs"); e.zonesMeta = $(".zonesw .est"); e.cells = $(".bg4");
+    e.footLeft = $(".sf .left"); e.footRight = $(".sf .right");
+    $(".mstage").addEventListener("click", () => this._more(c.mower || c.state_entity));
+    e.segw.querySelectorAll(".sgi").forEach((el) => el.addEventListener("click", () => this._action(el.dataset.a)));
+  }
+
+  _template() {
+    const c = this._config;
+    return `<ha-card><div class="glow"></div>
+      <div class="mh"><div class="ms"><span class="md"></span><span class="nm"></span> · <b>—</b></div><div class="mk"></div></div>
+      <div class="mstage"><svg class="dr" viewBox="0 0 180 180">
+        <circle cx="90" cy="90" r="82" fill="none" stroke="rgba(255,255,255,.07)" stroke-width="8"/>
+        <circle class="rp" cx="90" cy="90" r="82" fill="none" stroke="${COL.progress}" stroke-width="8" stroke-linecap="round" transform="rotate(-90 90 90)"/>
+        <circle cx="90" cy="90" r="66" fill="none" stroke="rgba(255,255,255,.07)" stroke-width="5"/>
+        <circle class="rb" cx="90" cy="90" r="66" fill="none" stroke="${COL.battery}" stroke-width="5" stroke-linecap="round" opacity=".75" transform="rotate(-90 90 90)"/>
+      </svg><div class="mc"><svg class="mi" viewBox="0 0 24 24">${I.mower}</svg><div class="mw">—</div><div class="msb">—</div></div></div>
+      <div class="mlg"></div>
+      <div class="segw"><div class="pill"></div>
+        <div class="sgi" data-a="start"><span>Tondre</span></div>
+        <div class="sgi" data-a="pause"><span>Pause</span></div>
+        <div class="sgi" data-a="dock"><span>Base</span></div>
+      </div>
+      ${c.show_phases ? `<div class="phw"><div class="slot"></div><div class="phr"></div></div>` : ""}
+      ${c.battery && c.show_battery_chart ? `<div class="chartw"><div class="lbl"><span class="k">Batterie · ${Number(c.hours)||4} h</span><span class="est"></span></div><div class="slot"></div></div>` : ""}
+      ${c.zones.length ? `<div class="zonesw"><div class="lbl"><span class="k">Zones</span><span class="est"></span></div><div class="zrs"></div></div>` : ""}
+      <div class="bg4"></div>
+      <div class="sf"><span class="left"></span><span class="right"></span></div></ha-card>`;
+  }
+
+  _action(kind) {
+    const c = this._config; if (!this._hass) return;
+    if (c.mower && c.mower.startsWith("lawn_mower.")) {
+      const svc = { start: "start_mowing", pause: "pause", dock: "dock" }[kind];
+      if (svc) this._hass.callService("lawn_mower", svc, { entity_id: c.mower });
+      return;
+    }
+    const btnMap = { start: c.start_button, pause: c.pause_button, dock: c.dock_button };
+    const btn = btnMap[kind]; if (!btn) return;
+    const d = domainOf(btn);
+    if (d === "button" || d === "input_button") this._hass.callService(d, "press", { entity_id: btn });
+    else if (d !== "script" && d !== "automation") this._hass.callService("homeassistant", "turn_on", { entity_id: btn });
+  }
+
+  _renderPhases(activeIdx) {
+    const e = this._els; if (!e.pbSlot) return;
+    const phases = [ { name: "Tonte", w: 0.72 }, { name: "Retour base", w: 0.12 }, { name: "Charge", w: 0.16 } ];
+    const W = 342, H = 8, gap = 3, total = phases.reduce((a,b) => a + b.w, 0);
+    let x = 0; const parts = [];
+    phases.forEach((p, i) => {
+      const pw = ((W - (phases.length - 1) * gap) * p.w) / total;
+      const fill = i < activeIdx ? 1 : i === activeIdx ? 0.55 : 0;
+      parts.push(`<rect x="${x.toFixed(1)}" y="0" width="${pw.toFixed(1)}" height="${H}" rx="4" fill="rgba(255,255,255,.07)"/>`);
+      if (fill > 0) parts.push(`<rect x="${x.toFixed(1)}" y="0" width="${Math.max(6, pw * fill).toFixed(1)}" height="${H}" rx="4" fill="#eef1f6" opacity="${fill < 1 ? 0.92 : 0.45}"/>`);
+      x += pw + gap;
+    });
+    e.pbSlot.innerHTML = `<svg class="pb" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">${parts.join("")}</svg>`;
+    e.phRow.innerHTML = phases.map((p, i) => `<span class="ph ${i === activeIdx ? "on" : i < activeIdx ? "done" : ""}">${esc(p.name)}</span>`).join("");
+  }
+
+  _renderChart() {
+    const c = this._config, e = this._els; if (!e.chartSlot) return;
+    const serie = this._series(c.battery);
+    e.chartSlot.innerHTML = buildSpark(serie || [], 342, 40, COL.progress, "gB");
+    if (serie && e.chartMeta) { const clean = serie.filter((v) => v != null); const delta = clean[clean.length-1] - clean[0]; e.chartMeta.textContent = `${delta >= 0 ? "+" : "−"}${this._fmt(Math.abs(delta), 0)} % sur ${c.hours} h`; }
+  }
+
+  _renderZones() {
+    const c = this._config, e = this._els; if (!e.zones) return;
+    e.zones.innerHTML = c.zones.map((z, i) => {
+      let pct = this._num(z.entity); if (pct != null && pct <= 1) pct *= 100;
+      const area = this._num(z.area); const name = z.name || this._st(z.entity)?.attributes?.friendly_name || `Zone ${i+1}`;
+      const done = pct != null && pct >= 99.5;
+      return `<div class="zr" data-i="${i}"><span class="zn">${esc(name)}</span><span class="zb"><i style="width:${Math.max(0, Math.min(100, pct ?? 0))}%"></i></span><span class="zp${done ? " done" : ""}">${pct != null ? `${Math.round(pct)} %` : "—"}</span><span class="zs">${area ? `${this._fmt(area, 0)} m²` : ""}</span></div>`;
+    }).join("");
+    e.zones.querySelectorAll(".zr").forEach((el) => el.addEventListener("click", () => this._more(c.zones[Number(el.dataset.i)].entity)));
+    if (e.zonesMeta) { const totalArea = c.zones.reduce((a, z) => a + (this._num(z.area) || 0), 0); e.zonesMeta.textContent = `${c.zones.length} zone${c.zones.length > 1 ? "s" : ""}${totalArea ? ` · ${this._fmt(totalArea, 0)} m²` : ""}`; }
+  }
+
+  _update() {
+    const c = this._config, e = this._els; if (!this._hass || !this._built) return;
+    const mode = this._mode(), progress = this._progress(), batt = this._num(c.battery), rem = this._remainingMinutes();
+    e.card.className = `m-${mode}`;
+    const dotColor = mode === "error" ? COL.alert : mode === "mowing" ? COL.progress : mode === "paused" ? COL.warn : COL.battery;
+    e.dot.style.background = dotColor; e.dot.style.boxShadow = `0 0 8px ${dotColor}99`;
+    const labels = { mowing: "Tonte", paused: "En pause", returning: "Retour base", docked: "À la base", error: "Erreur" };
+    e.name.textContent = c.name; e.state.textContent = labels[mode];
+    const chips = []; const rtk = this._txt(c.rtk_status, null); if (rtk) chips.push(rtk);
+    const sat = this._num(c.satellites); if (sat != null) chips.push(`${Math.round(sat)} sat`);
+    e.chips.innerHTML = chips.map((t) => `<span class="lk">${esc(t)}</span>`).join("");
+    const C1 = 2 * Math.PI * 82, C2 = 2 * Math.PI * 66;
+    e.ringProg.setAttribute("stroke-dasharray", `${(C1 * (progress ?? 0)).toFixed(1)} ${C1.toFixed(1)}`);
+    e.ringBatt.setAttribute("stroke-dasharray", `${(C2 * ((batt ?? 0) / 100)).toFixed(1)} ${C2.toFixed(1)}`);
+    e.ringBatt.setAttribute("stroke", batt != null && batt <= 20 ? COL.warn : COL.battery);
+    if (mode === "mowing" && rem != null) { const h = Math.floor(rem / 60), m = Math.round(rem % 60); e.big.innerHTML = h > 0 ? `${h}<span>h</span>${String(m).padStart(2,"0")}` : `${m}<span>min</span>`; }
+    else if (progress != null) e.big.innerHTML = `${Math.round(progress * 100)}<span>%</span>`;
+    else e.big.textContent = labels[mode];
+    const sub = []; if (progress != null && mode === "mowing") sub.push(`${Math.round(progress * 100)} %`);
+    const area = this._num(c.area); if (area != null) sub.push(`${this._fmt(area, 0)} m²`);
+    e.bigSub.textContent = sub.join(" · ") || "";
+    const finish = rem != null ? new Date(Date.now() + rem * 60000) : null;
+    e.legend.innerHTML = `<span><i style="background:${COL.progress}"></i>Progression</span><span><i style="background:${COL.battery}"></i>Batterie ${batt != null ? `${Math.round(batt)} %` : "—"}</span><span class="mr">${finish ? `fin ${this._hhmm(finish)}` : ""}</span>`;
+    const activeSeg = mode === "mowing" ? 0 : mode === "paused" ? 1 : 2;
+    e.segw.querySelector(".pill").style.left = `calc(${activeSeg} * (100% - 8px) / 3 + 4px)`;
+    e.segw.querySelectorAll(".sgi").forEach((el, i) => el.classList.toggle("on", i === activeSeg));
+    if (e.phases) this._renderPhases(mode === "mowing" ? 0 : mode === "returning" ? 1 : 2);
+    this._renderZones();
+    const cells = [
+      { k: "Surface", v: this._num(c.area) != null ? `${this._fmt(this._num(c.area), 0)} m²` : "—" },
+      { k: "Durée", v: this._dur(this._num(c.session_duration)) },
+      { k: "Lame", v: this._num(c.blade_height) != null ? `${this._fmt(this._num(c.blade_height), 0)} mm` : "—" },
+      { k: "RTK", v: rtk || "—" },
+    ];
+    e.cells.innerHTML = cells.map((x) => `<div class="bc4"><span>${esc(x.k)}</span><b>${esc(x.v)}</b></div>`).join("");
+    const err = this._txt(c.error, null);
+    const hasErr = mode === "error" || (err && !["off","none","no_error","unknown","0","—"].includes(norm(err)));
+    e.footLeft.innerHTML = `<i class="${hasErr ? "warn" : ""}"></i>${hasErr ? esc(err) : "Aucune erreur"}`;
+    const wear = this._num(c.blade_wear), km = this._num(c.odometer);
+    e.footRight.textContent = km != null ? `${this._fmt(km, 0)} km` : wear != null ? `Lames · ${this._fmt(wear, 0)} %` : "";
+    if (!this._history) this._renderChart();
+  }
+}
+
+MammotionCard.styles = `
+:host{--mm-bg:#12151c;--mm-green:#c9f0a8;--mm-blue:#7fb3ff;--mm-warn:#ffc76b;--mm-alert:#ff6b5c;display:block;}
+*{box-sizing:border-box;}
+ha-card{border-radius:var(--ha-card-border-radius,26px);padding:20px 18px 16px;position:relative;overflow:hidden;border:1px solid rgba(255,255,255,.07);background:var(--mm-bg);color:#eef1f6;font-family:var(--primary-font-family,"Inter","Segoe UI",Roboto,sans-serif);transition:border-color .35s;}
+ha-card::after{content:"";position:absolute;left:20px;right:20px;top:0;height:1px;background:linear-gradient(90deg,transparent,rgba(255,255,255,.14),transparent);}
+.glow{position:absolute;inset:0;pointer-events:none;transition:.5s;background:radial-gradient(85% 50% at 50% 6%,rgba(201,240,168,.14),transparent 62%);}
+.m-docked .glow,.m-returning .glow{background:radial-gradient(85% 50% at 50% 6%,rgba(127,179,255,.13),transparent 62%);}
+.m-paused .glow{background:radial-gradient(85% 50% at 50% 6%,rgba(255,199,107,.13),transparent 62%);}
+.m-error{border-color:rgba(255,107,92,.38);}
+.m-error .glow{background:radial-gradient(88% 55% at 50% 6%,rgba(255,107,92,.22),transparent 62%);}
+.mh{display:flex;align-items:center;justify-content:space-between;gap:8px;position:relative;z-index:1;}
+.ms{display:flex;align-items:center;gap:7px;font-size:11.5px;color:rgba(255,255,255,.55);min-width:0;}
+.ms .nm{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.ms b{color:#eef1f6;font-weight:600;white-space:nowrap;}
+.md{width:6px;height:6px;border-radius:50%;flex-shrink:0;}
+.mk{display:flex;gap:5px;flex-shrink:0;}
+.lk{font-size:8.5px;font-weight:600;letter-spacing:.7px;color:rgba(255,255,255,.5);background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.09);border-radius:6px;padding:3px 6px;white-space:nowrap;}
+.mstage{position:relative;width:180px;margin:20px auto 0;z-index:1;cursor:pointer;}
+.dr{display:block;width:180px;height:180px;}
+.dr circle{transition:stroke-dasharray .6s ease,stroke .3s;}
+.mc{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:7px;pointer-events:none;}
+.mi{width:21px;height:21px;fill:var(--mm-green);}
+.m-docked .mi,.m-returning .mi{fill:var(--mm-blue);}
+.m-paused .mi{fill:var(--mm-warn);}
+.m-error .mi{fill:var(--mm-alert);}
+.mw{font-size:38px;font-weight:200;letter-spacing:-2px;line-height:1;font-variant-numeric:tabular-nums;}
+.mw span{font-size:15px;font-weight:300;color:rgba(255,255,255,.4);margin:0 2px;letter-spacing:0;}
+.msb{font-size:10px;color:rgba(255,255,255,.38);font-variant-numeric:tabular-nums;}
+.mlg{display:flex;align-items:center;gap:12px;font-size:9px;color:rgba(255,255,255,.36);margin-top:12px;position:relative;z-index:1;}
+.mlg i{width:7px;height:7px;border-radius:50%;display:inline-block;margin-right:5px;}
+.mlg .mr{margin-left:auto;font-variant-numeric:tabular-nums;}
+.segw{position:relative;display:flex;margin-top:16px;padding:4px;border-radius:16px;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.08);z-index:1;}
+.pill{position:absolute;top:4px;bottom:4px;left:4px;width:calc((100% - 8px)/3);border-radius:13px;background:rgba(255,255,255,.13);box-shadow:inset 0 0 0 1px rgba(255,255,255,.16),0 4px 14px rgba(0,0,0,.3);transition:left .32s cubic-bezier(.4,1.3,.5,1);}
+.sgi{position:relative;flex:1;text-align:center;padding:11px 0;cursor:pointer;}
+.sgi span{font-size:11px;font-weight:600;color:rgba(255,255,255,.45);}
+.sgi.on span{color:#eef1f6;}
+.phw{margin-top:18px;position:relative;z-index:1;}
+.pb{display:block;width:100%;height:8px;}
+.phr{display:flex;justify-content:space-between;margin-top:7px;}
+.ph{font-size:8.5px;letter-spacing:.4px;text-transform:uppercase;font-weight:600;color:rgba(255,255,255,.24);}
+.ph.done{color:rgba(255,255,255,.44);}
+.ph.on{color:#eef1f6;}
+.k{font-size:9px;letter-spacing:2px;text-transform:uppercase;color:rgba(255,255,255,.42);font-weight:600;}
+.est{font-size:9.5px;color:rgba(255,255,255,.34);font-variant-numeric:tabular-nums;}
+.lbl{display:flex;align-items:baseline;justify-content:space-between;gap:8px;margin-bottom:9px;}
+.chartw{margin-top:18px;position:relative;z-index:1;}
+.sp{display:block;width:100%;height:40px;}
+.zonesw{margin-top:18px;position:relative;z-index:1;}
+.zrs{display:flex;flex-direction:column;gap:1px;}
+.zr{display:flex;align-items:center;gap:9px;padding:6px 0;cursor:pointer;}
+.zn{font-size:11px;color:rgba(255,255,255,.55);width:106px;flex-shrink:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.zb{flex:1;height:4px;border-radius:2px;background:rgba(255,255,255,.08);overflow:hidden;}
+.zb i{display:block;height:100%;border-radius:2px;background:var(--mm-green);opacity:.75;transition:width .4s;}
+.zp{font-size:10.5px;font-weight:600;width:34px;text-align:right;color:rgba(255,255,255,.62);font-variant-numeric:tabular-nums;}
+.zp.done{color:var(--mm-green);}
+.zs{font-size:9.5px;width:46px;text-align:right;color:rgba(255,255,255,.3);font-variant-numeric:tabular-nums;}
+.bg4{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-top:18px;position:relative;z-index:1;}
+.bc4{background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.075);border-radius:12px;padding:9px 5px;text-align:center;}
+.bc4 span{display:block;font-size:7.5px;letter-spacing:.8px;text-transform:uppercase;color:rgba(255,255,255,.38);font-weight:600;}
+.bc4 b{display:block;font-size:12.5px;font-weight:600;margin-top:5px;font-variant-numeric:tabular-nums;}
+.sf{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:15px;padding-top:12px;border-top:1px solid rgba(255,255,255,.07);font-size:10px;color:rgba(255,255,255,.4);position:relative;z-index:1;}
+.sf .left{display:flex;align-items:center;gap:6px;min-width:0;}
+.sf .left i{width:5px;height:5px;border-radius:50%;background:var(--mm-green);flex-shrink:0;}
+.sf .left i.warn{background:var(--mm-alert);}
+.sf .right{text-align:right;font-variant-numeric:tabular-nums;flex-shrink:0;}
+`;
+
+if (!customElements.get("mammotion-card")) customElements.define("mammotion-card", MammotionCard);
+window.customCards = window.customCards || [];
+window.customCards.push({ type: "mammotion-card", name: "Mammotion Card", description: "Tondeuse Mammotion : double anneau progression/batterie, phases, zones et contrôles.", preview: true, documentationURL: "https://github.com/junkoku38/mammotion-card" });
