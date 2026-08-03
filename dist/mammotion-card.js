@@ -7,7 +7,7 @@
  * https://github.com/junkoku38/mammotion-card
  */
 
-const CARD_VERSION = "1.0.0";
+const CARD_VERSION = "1.1.0";
 
 console.info(
   `%c MAMMOTION-CARD %c v${CARD_VERSION} `,
@@ -66,6 +66,17 @@ function buildSpark(values, w, h, color, gid) {
   return `<svg class="sp" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none"><defs><linearGradient id="${gid}" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="${color}" stop-opacity=".22"/><stop offset="100%" stop-color="${color}" stop-opacity="0"/></linearGradient></defs><path d="${area}" fill="url(#${gid})"/><path d="${line}" fill="none" stroke="${color}" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke"/><line x1="${X}" y1="${Y}" x2="${X}" y2="${Y}" stroke="${color}" stroke-width="4.8" stroke-linecap="round" vector-effect="non-scaling-stroke"/></svg>`;
 }
 
+
+async function ensureHaForm() {
+  if (customElements.get("ha-form")) return true;
+  try {
+    const helpers = await window.loadCardHelpers();
+    const card = helpers.createCardElement({ type: "entities", entities: [] });
+    if (card?.constructor?.getConfigElement) await card.constructor.getConfigElement();
+  } catch (err) { console.warn("mammotion-card : ha-form indisponible", err); }
+  return !!customElements.get("ha-form");
+}
+
 class MammotionCard extends HTMLElement {
   constructor() { super(); this.attachShadow({ mode: "open" }); this._built = false; this._els = {}; this._history = null; this._fetchedAt = 0; this._busy = false; this._tick = null; }
 
@@ -74,6 +85,11 @@ class MammotionCard extends HTMLElement {
     this._config = { name: "Tondeuse", hours: 4, points: 60, refresh: 300, show_battery_chart: true, show_phases: true, zones: [], ...config };
     this._built = false; this._history = null; this._fetchedAt = 0;
     if (this.shadowRoot) this.shadowRoot.innerHTML = "";
+  }
+
+  static async getConfigElement() {
+    await ensureHaForm();
+    return document.createElement("mammotion-card-editor");
   }
 
   static getStubConfig(hass) {
@@ -232,12 +248,13 @@ class MammotionCard extends HTMLElement {
     e.ringBatt.setAttribute("stroke-dasharray", `${(C2 * ((batt ?? 0) / 100)).toFixed(1)} ${C2.toFixed(1)}`);
     e.ringBatt.setAttribute("stroke", batt != null && batt <= 20 ? COL.warn : COL.battery);
     if (mode === "mowing" && rem != null) { const h = Math.floor(rem / 60), m = Math.round(rem % 60); e.big.innerHTML = h > 0 ? `${h}<span>h</span>${String(m).padStart(2,"0")}` : `${m}<span>min</span>`; }
-    else if (progress != null) e.big.innerHTML = `${Math.round(progress * 100)}<span>%</span>`;
+    else if (mode === "mowing" && progress != null) e.big.innerHTML = `${Math.round(progress * 100)}<span>%</span>`;
+    else if (batt != null) e.big.innerHTML = `${Math.round(batt)}<span>%</span>`;
     else e.big.textContent = labels[mode];
     const sub = []; if (progress != null && mode === "mowing") sub.push(`${Math.round(progress * 100)} %`);
     const area = this._num(c.area); if (area != null) sub.push(`${this._fmt(area, 0)} m²`);
     e.bigSub.textContent = sub.join(" · ") || "";
-    const finish = rem != null ? new Date(Date.now() + rem * 60000) : null;
+    const finish = rem != null && rem > 0 ? new Date(Date.now() + rem * 60000) : null;
     e.legend.innerHTML = `<span><i style="background:${COL.progress}"></i>Progression</span><span><i style="background:${COL.battery}"></i>Batterie ${batt != null ? `${Math.round(batt)} %` : "—"}</span><span class="mr">${finish ? `fin ${this._hhmm(finish)}` : ""}</span>`;
     const activeSeg = mode === "mowing" ? 0 : mode === "paused" ? 1 : 2;
     e.segw.querySelector(".pill").style.left = `calc(${activeSeg} * (100% - 8px) / 3 + 4px)`;
@@ -252,8 +269,12 @@ class MammotionCard extends HTMLElement {
     ];
     e.cells.innerHTML = cells.map((x) => `<div class="bc4"><span>${esc(x.k)}</span><b>${esc(x.v)}</b></div>`).join("");
     const err = this._txt(c.error, null);
-    const hasErr = mode === "error" || (err && !["off","none","no_error","unknown","0","—"].includes(norm(err)));
-    e.footLeft.innerHTML = `<i class="${hasErr ? "warn" : ""}"></i>${hasErr ? esc(err) : "Aucune erreur"}`;
+    const errCode = this._txt(c.error_code, null);
+    // Une erreur n'est active que si le mode est error, ou si un code d'erreur
+    // numerique non nul est present. Le texte de derniere_erreur reste stocke
+    // meme apres resolution, donc il ne peut pas seul indiquer une erreur active.
+    const hasErr = mode === "error" || (errCode && !["0","none","no_error","unknown","—","null"].includes(norm(errCode)));
+    e.footLeft.innerHTML = `<i class="${hasErr ? "warn" : ""}"></i>${hasErr ? esc(err || errCode || "Erreur active") : "Aucune erreur"}`;
     const wear = this._num(c.blade_wear), km = this._num(c.odometer);
     e.footRight.textContent = km != null ? `${this._fmt(km, 0)} km` : wear != null ? `Lames · ${this._fmt(wear, 0)} %` : "";
     if (!this._history) this._renderChart();
@@ -326,6 +347,132 @@ ha-card::after{content:"";position:absolute;left:20px;right:20px;top:0;height:1p
 .sf .left i.warn{background:var(--mm-alert);}
 .sf .right{text-align:right;font-variant-numeric:tabular-nums;flex-shrink:0;}
 `;
+
+
+/* ------------------------------------------------------------------ */
+/* Éditeur visuel                                                      */
+/* ------------------------------------------------------------------ */
+
+const FLAT_KEYS = [
+  "name","mower","battery","progress","remaining_time","session_duration",
+  "area","blade_height","satellites","rtk_status","error","error_code",
+  "odometer","blade_wear","speed","start_button","pause_button","dock_button",
+  "hours","points","refresh","show_battery_chart","show_phases",
+];
+const MANAGED_KEYS = [...FLAT_KEYS, "type", "zones"];
+
+const LABELS = {
+  name: "Nom", mower: "Tondeuse (lawn_mower)",
+  battery: "Batterie", progress: "Progression",
+  remaining_time: "Temps restant", session_duration: "Durée de session",
+  area: "Surface en cours", blade_height: "Hauteur des lames",
+  satellites: "Satellites", rtk_status: "Statut RTK",
+  error: "Dernière erreur (texte)", error_code: "Code d'erreur (actif)",
+  odometer: "Kilométrage total", blade_wear: "Usure des lames", speed: "Vitesse",
+  start_button: "Bouton Démarrer (repli)", pause_button: "Bouton Pause (repli)",
+  dock_button: "Bouton Base (repli)",
+  hours: "Fenêtre d'historique", points: "Échantillons", refresh: "Relecture",
+  show_battery_chart: "Afficher la courbe de batterie", show_phases: "Afficher les phases",
+};
+
+const HELPERS = {
+  mower: "Entité lawn_mower principale.",
+  progress: "Capteur de progression en % (0-100).",
+  error_code: "Code d'erreur numérique. 0 ou none = pas d'erreur active. Le texte de dernière erreur reste stocké même après résolution.",
+  start_button: "Utilisé si l'entité n'est pas un lawn_mower (button ou script, script rejeté).",
+};
+
+const SCHEMA = [
+  { name: "name", selector: { text: {} } },
+  { name: "mower", selector: { entity: { filter: [{ domain: ["lawn_mower", "vacuum"] }] } } },
+  {
+    type: "expandable", name: "", title: "Capteurs", icon: "mdi:gauge",
+    schema: [
+      { name: "battery", selector: { entity: { filter: [{ domain: "sensor", device_class: "battery" }] } } },
+      { name: "progress", selector: { entity: { filter: [{ domain: "sensor" }] } } },
+      { name: "remaining_time", selector: { entity: { filter: [{ domain: "sensor" }] } } },
+      { name: "session_duration", selector: { entity: { filter: [{ domain: "sensor" }] } } },
+      { name: "area", selector: { entity: { filter: [{ domain: "sensor" }] } } },
+      { name: "blade_height", selector: { entity: { filter: [{ domain: "sensor" }] } } },
+      { name: "satellites", selector: { entity: { filter: [{ domain: "sensor" }] } } },
+      { name: "rtk_status", selector: { entity: { filter: [{ domain: "sensor" }] } } },
+    ],
+  },
+  {
+    type: "expandable", name: "", title: "Erreurs et stats", icon: "mdi:alert-circle-outline",
+    schema: [
+      { name: "error", selector: { entity: { filter: [{ domain: "sensor" }] } } },
+      { name: "error_code", selector: { entity: { filter: [{ domain: "sensor" }] } } },
+      { name: "odometer", selector: { entity: { filter: [{ domain: "sensor" }] } } },
+      { name: "blade_wear", selector: { entity: { filter: [{ domain: "sensor" }] } } },
+      { name: "speed", selector: { entity: { filter: [{ domain: "sensor" }] } } },
+    ],
+  },
+  {
+    type: "expandable", name: "", title: "Boutons (repli)", icon: "mdi:gesture-tap-button",
+    schema: [
+      { name: "start_button", selector: { entity: { filter: [{ domain: ["button", "input_button"] }] } } },
+      { name: "pause_button", selector: { entity: { filter: [{ domain: ["button", "input_button"] }] } } },
+      { name: "dock_button", selector: { entity: { filter: [{ domain: ["button", "input_button"] }] } } },
+    ],
+  },
+  {
+    type: "expandable", name: "", title: "Affichage", icon: "mdi:tune",
+    schema: [
+      {
+        type: "grid", name: "",
+        schema: [
+          { name: "hours", selector: { number: { min: 1, max: 72, mode: "box", unit_of_measurement: "h" } } },
+          { name: "points", selector: { number: { min: 8, max: 400, mode: "box" } } },
+          { name: "refresh", selector: { number: { min: 30, max: 3600, mode: "box", unit_of_measurement: "s" } } },
+        ],
+      },
+      { name: "show_battery_chart", selector: { boolean: {} } },
+      { name: "show_phases", selector: { boolean: {} } },
+    ],
+  },
+];
+
+class MammotionCardEditor extends HTMLElement {
+  constructor() { super(); this.attachShadow({ mode: "open" }); this._config = {}; }
+  setConfig(config) { this._config = config ? { ...config } : {}; this._render(); }
+  set hass(hass) { this._hass = hass; if (this._form) this._form.hass = hass; this._render(); }
+  connectedCallback() { ensureHaForm().then(() => this._render()); }
+  _data() { const c = this._config || {}; const d = {}; FLAT_KEYS.forEach((k) => { if (c[k] !== undefined) d[k] = c[k]; }); return d; }
+  _merge(v) {
+    const out = { ...this._config };
+    FLAT_KEYS.forEach((k) => { const val = v[k]; if (val === "" || val === undefined || val === null) delete out[k]; else out[k] = val; });
+    return out;
+  }
+  _unmanaged() {
+    const extra = Object.keys(this._config || {}).filter((k) => !MANAGED_KEYS.includes(k));
+    if (Array.isArray(this._config.zones) && this._config.zones.length) extra.push("zones");
+    return extra;
+  }
+  _render() {
+    if (!this.shadowRoot) return;
+    if (!customElements.get("ha-form")) {
+      this.shadowRoot.innerHTML = `<style>${MammotionCardEditor.styles}</style><div class="warn">ha-form indisponible.</div>`;
+      return;
+    }
+    if (!this._form) {
+      this.shadowRoot.innerHTML = `<style>${MammotionCardEditor.styles}</style><div class="wrap"></div><div class="note"></div>`;
+      this._form = document.createElement("ha-form");
+      this._form.computeLabel = (s) => LABELS[s.name] || s.name;
+      this._form.computeHelper = (s) => HELPERS[s.name] || "";
+      this._form.addEventListener("value-changed", (ev) => { ev.stopPropagation(); fireEvent(this, "config-changed", { config: this._merge(ev.detail.value) }); });
+      this.shadowRoot.querySelector(".wrap").appendChild(this._form);
+    }
+    this._form.hass = this._hass; this._form.schema = SCHEMA; this._form.data = this._data();
+    const extra = this._unmanaged();
+    const note = this.shadowRoot.querySelector(".note");
+    if (extra.length) { note.innerHTML = `<div class="keep">Conservé sans être éditable ici : <b></b>.</div>`; note.querySelector("b").textContent = extra.join(", "); }
+    else note.innerHTML = "";
+  }
+}
+MammotionCardEditor.styles = `:host{display:block;}.warn{padding:10px;border-radius:8px;background:var(--warning-color,#dfb37a);color:#1c1c1c;font-size:12px;}.keep{margin-top:12px;padding:10px;border-radius:8px;background:rgba(143,176,201,.16);border:1px solid rgba(143,176,201,.4);font-size:12px;}`;
+
+if (!customElements.get("mammotion-card-editor")) customElements.define("mammotion-card-editor", MammotionCardEditor);
 
 if (!customElements.get("mammotion-card")) customElements.define("mammotion-card", MammotionCard);
 window.customCards = window.customCards || [];
