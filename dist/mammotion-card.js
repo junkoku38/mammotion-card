@@ -7,7 +7,7 @@
  * https://github.com/junkoku38/mammotion-card
  */
 
-const CARD_VERSION = "1.2.0";
+const CARD_VERSION = "1.3.0";
 
 console.info(
   `%c MAMMOTION-CARD %c v${CARD_VERSION} `,
@@ -110,6 +110,7 @@ class MammotionCard extends HTMLElement {
   connectedCallback() { this._tick = setInterval(() => { this._update(); if (Date.now() - this._fetchedAt > this._config.refresh * 1000) this._fetchHistory(); }, 20000); }
   disconnectedCallback() { if (this._tick) clearInterval(this._tick); this._tick = null; }
 
+  _s(id) { return this._st(id)?.state ?? null; }
   _st(id) { return id && this._hass ? this._hass.states[id] : null; }
   _num(id) { if (typeof id === "number") return id; const s = this._st(id); if (!s || isDead(s.state)) return null; const v = Number(s.state); return Number.isNaN(v) ? null : v; }
   _txt(id, fallback = "—") { const s = this._st(id); if (!s || isDead(s.state)) return fallback; return s.state; }
@@ -206,6 +207,22 @@ class MammotionCard extends HTMLElement {
       ${c.show_phases ? `<div class="phw"><div class="slot"></div><div class="phr"></div></div>` : ""}
       ${c.battery && c.show_battery_chart ? `<div class="chartw"><div class="lbl"><span class="k">Batterie · ${Number(c.hours)||4} h</span><span class="est"></span></div><div class="slot"></div></div>` : ""}
       ${c.zones.length ? `<div class="zonesw"><div class="lbl"><span class="k">Zones</span><span class="est"></span></div><div class="zrs"></div></div>` : ""}
+
+      <details class="acc acc-mow">
+        <summary class="accs"><span class="k">Réglages de tonte</span><svg class="car" viewBox="0 0 24 24"><path d="M7 10l5 5 5-5z"/></svg></summary>
+        <div class="accb" id="mow-grid"></div>
+      </details>
+
+      <details class="acc acc-conn">
+        <summary class="accs"><span class="k">Connexion et positionnement</span><svg class="car" viewBox="0 0 24 24"><path d="M7 10l5 5 5-5z"/></svg></summary>
+        <div class="accb" id="conn-grid"></div>
+      </details>
+
+      <details class="acc acc-sw">
+        <summary class="accs"><span class="k">Commutateurs</span><svg class="car" viewBox="0 0 24 24"><path d="M7 10l5 5 5-5z"/></svg></summary>
+        <div class="accb" id="sw-list"></div>
+      </details>
+
       <div class="bg4"></div>
       <div class="sf"><span class="left"></span><span class="right"></span></div></ha-card>`;
   }
@@ -307,6 +324,74 @@ class MammotionCard extends HTMLElement {
     const wear = this._num(c.blade_wear), km = this._num(c.odometer);
     e.footRight.textContent = km != null ? `${this._fmt(km, 0)} km` : wear != null ? `Lames · ${this._fmt(wear, 0)} %` : "";
     if (!this._history) this._renderChart();
+
+
+    /* Sections repliables */
+    const fmtVal = (id, suffix = "") => { const v = this._txt(id, null); return v && v !== "—" ? v + suffix : "—"; };
+    const fmtNum = (id, suffix = "") => { const v = this._num(id); return v != null ? this._fmt(v, v < 10 ? 1 : 0) + suffix : "—"; };
+    const cell = (label, value) => `<div class="gc"><span>${esc(label)}</span><b>${esc(value)}</b></div>`;
+
+    // Reglages de tonte
+    if (e.mowGrid) {
+      const items = [];
+      if (c.speed) items.push(cell("Vitesse", fmtNum(c.speed, " m/s")));
+      if (c.spacing) items.push(cell("Espacement", fmtNum(c.spacing, " cm")));
+      if (c.angle) items.push(cell("Angle", fmtVal(c.angle)));
+      if (c.trajectory_mode) items.push(cell("Trajectoire", fmtVal(c.trajectory_mode)));
+      if (c.mowing_order) items.push(cell("Ordre", fmtVal(c.mowing_order)));
+      if (c.obstacle_detection) items.push(cell("Obstacles", fmtVal(c.obstacle_detection)));
+      if (c.wildlife_safety) items.push(cell("Faune", fmtVal(c.wildlife_safety)));
+      if (c.rain_detection_mowing) items.push(cell("Pluie (tonte)", fmtVal(c.rain_detection_mowing)));
+      if (c.rain_detection_during) items.push(cell("Pluie (pendant)", fmtVal(c.rain_detection_during)));
+      e.mowGrid.innerHTML = items.join("");
+      e.mowGrid.closest(".acc").classList.toggle("hidden", !items.length);
+    }
+
+    // Connexion et positionnement
+    if (e.connGrid) {
+      const items = [];
+      if (c.activity_mode) items.push(cell("Mode activité", fmtVal(c.activity_mode)));
+      if (c.position_type) items.push(cell("Position", fmtVal(c.position_type)));
+      if (c.rtk_status) items.push(cell("RTK", fmtVal(c.rtk_status)));
+      if (c.satellites) items.push(cell("Satellites", fmtNum(c.satellites)));
+      if (c.satellites_l1) items.push(cell("Sat L1", fmtNum(c.satellites_l1)));
+      if (c.satellites_l2) items.push(cell("Sat L2", fmtNum(c.satellites_l2)));
+      if (c.wifi_signal) items.push(cell("Wi-Fi", fmtNum(c.wifi_signal, " dBm")));
+      if (c.cellular_signal) items.push(cell("4G", fmtNum(c.cellular_signal, " dBm")));
+      if (c.bluetooth_signal) items.push(cell("BT", fmtNum(c.bluetooth_signal, " dBm")));
+      if (c.firmware) {
+        const f = this._st(c.firmware);
+        const pending = f?.state === "on";
+        items.push(cell("Firmware", pending ? "MAJ dispo" : (f?.attributes?.installed_version || "—")));
+      }
+      e.connGrid.innerHTML = items.join("");
+      e.connGrid.closest(".acc").classList.toggle("hidden", !items.length);
+    }
+
+    // Commutateurs
+    if (e.swList) {
+      const sws = [];
+      const swList = [
+        ["Bluetooth", c.bluetooth_switch], ["Cloud", c.cloud_switch],
+        ["LED latérales", c.led_switch], ["Voix", c.voice_switch],
+        ["MAJ auto", c.auto_update_switch],
+      ];
+      for (const [label, id] of swList) {
+        if (!id) continue;
+        const on = this._s(id) === "on";
+        sws.push(`<div class="sw-row" data-e="${esc(id)}"><span class="sw-n">${esc(label)}</span><span class="sw-t${on ? " on" : ""}"></span></div>`);
+      }
+      e.swList.innerHTML = sws.join("");
+      e.swList.closest(".acc").classList.toggle("hidden", !sws.length);
+      e.swList.querySelectorAll(".sw-row").forEach((row) => {
+        row.addEventListener("click", (ev) => {
+          ev.stopPropagation();
+          const id = row.dataset.e;
+          const d = domainOf(id);
+          if (["switch","input_boolean","light"].includes(d)) this._hass.callService(d, "toggle", { entity_id: id });
+        });
+      });
+    }
 
     /* Camera */
     if (c.camera && this._els.camSlot) {
@@ -419,6 +504,37 @@ ha-card::after{content:"";position:absolute;left:20px;right:20px;top:0;height:1p
 .eb:hover{background:rgba(255,255,255,.1);}
 .eb.ghost{background:rgba(255,107,92,.10);border-color:rgba(255,107,92,.28);color:#ffb3aa;}
 
+
+/* Sections repliables */
+.acc{border-radius:14px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.07);
+  padding:0 13px;margin-top:14px;position:relative;z-index:1;transition:.2s;}
+.acc[open]{background:rgba(255,255,255,.06);border-color:rgba(255,255,255,.11);}
+.acc.hidden{display:none;}
+.accs{display:flex;align-items:center;justify-content:space-between;gap:8px;
+  padding:12px 0;cursor:pointer;list-style:none;}
+.accs::-webkit-details-marker{display:none;}
+.car{width:11px;height:11px;fill:rgba(255,255,255,.35);transition:transform .2s;}
+.acc[open] .car{transform:rotate(180deg);}
+.accb{padding:2px 0 12px;}
+.accb:empty{padding:0;}
+
+.gc{display:inline-flex;flex-direction:column;gap:2px;padding:7px 10px;border-radius:9px;
+  background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.05);margin:3px;min-width:90px;}
+.gc span{font-size:8px;letter-spacing:.6px;text-transform:uppercase;color:rgba(255,255,255,.36);font-weight:600;}
+.gc b{font-size:11px;font-weight:600;font-variant-numeric:tabular-nums;}
+
+#mow-grid,#conn-grid{display:flex;flex-wrap:wrap;gap:3px;}
+
+.sw-row{display:flex;align-items:center;justify-content:space-between;gap:10px;
+  padding:8px 0;cursor:pointer;}
+.sw-row+.sw-row{border-top:1px solid rgba(255,255,255,.03);}
+.sw-n{font-size:11px;color:rgba(255,255,255,.55);}
+.sw-t{width:32px;height:18px;border-radius:10px;background:rgba(255,255,255,.1);position:relative;transition:.15s;}
+.sw-t::after{content:"";position:absolute;top:2px;left:2px;width:14px;height:14px;border-radius:50%;
+  background:rgba(255,255,255,.4);transition:.15s;}
+.sw-t.on{background:rgba(201,240,168,.3);}
+.sw-t.on::after{left:16px;background:var(--mm-green);}
+
 .sf{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:15px;padding-top:12px;border-top:1px solid rgba(255,255,255,.07);font-size:10px;color:rgba(255,255,255,.4);position:relative;z-index:1;}
 .sf .left{display:flex;align-items:center;gap:6px;min-width:0;}
 .sf .left i{width:5px;height:5px;border-radius:50%;background:var(--mm-green);flex-shrink:0;}
@@ -436,6 +552,11 @@ const FLAT_KEYS = [
   "area","blade_height","satellites","rtk_status","error","error_code",
   "odometer","blade_wear","speed","start_button","pause_button","dock_button",
   "camera","restart_button","edge_button","leave_dock_button","battery_cycles","total_work_time",
+  "speed","spacing","angle","trajectory_mode","mowing_order","obstacle_detection",
+  "wildlife_safety","rain_detection_mowing","rain_detection_during",
+  "activity_mode","position_type","satellites_l1","satellites_l2",
+  "wifi_signal","cellular_signal","bluetooth_signal","firmware",
+  "bluetooth_switch","cloud_switch","led_switch","voice_switch","auto_update_switch",
   "hours","points","refresh","show_battery_chart","show_phases",
 ];
 const MANAGED_KEYS = [...FLAT_KEYS, "type", "zones"];
@@ -456,6 +577,18 @@ const LABELS = {
   leave_dock_button: "Bouton Quitter la base",
   battery_cycles: "Cycles de batterie",
   total_work_time: "Temps de travail total",
+  speed: "Vitesse de tonte", spacing: "Espacement des trajectoires",
+  angle: "Angle de trajectoire", trajectory_mode: "Mode de trajectoire",
+  mowing_order: "Ordre de tonte", obstacle_detection: "Détection d'obstacles",
+  wildlife_safety: "Sécurité faune", rain_detection_mowing: "Pluie (tonte)",
+  rain_detection_during: "Pluie (pendant tonte)",
+  activity_mode: "Mode d'activité", position_type: "Type de position",
+  satellites_l1: "Satellites L1", satellites_l2: "Satellites L2",
+  wifi_signal: "Signal Wi-Fi", cellular_signal: "Signal 4G",
+  bluetooth_signal: "Signal Bluetooth", firmware: "Firmware",
+  bluetooth_switch: "Bluetooth (switch)", cloud_switch: "Cloud (switch)",
+  led_switch: "LED latérales (switch)", voice_switch: "Voix (switch)",
+  auto_update_switch: "MAJ auto (switch)",
   hours: "Fenêtre d'historique", points: "Échantillons", refresh: "Relecture",
   show_battery_chart: "Afficher la courbe de batterie", show_phases: "Afficher les phases",
 };
@@ -484,6 +617,20 @@ const SCHEMA = [
     ],
   },
   {
+    type: "expandable", name: "", title: "Réglages de tonte", icon: "mdi:grass",
+    schema: [
+      { name: "speed", selector: { entity: { filter: [{ domain: ["sensor", "number"] }] } } },
+      { name: "spacing", selector: { entity: { filter: [{ domain: "number" }] } } },
+      { name: "angle", selector: { entity: { filter: [{ domain: "select" }] } } },
+      { name: "trajectory_mode", selector: { entity: { filter: [{ domain: "select" }] } } },
+      { name: "mowing_order", selector: { entity: { filter: [{ domain: "select" }] } } },
+      { name: "obstacle_detection", selector: { entity: { filter: [{ domain: "select" }] } } },
+      { name: "wildlife_safety", selector: { entity: { filter: [{ domain: "select" }] } } },
+      { name: "rain_detection_mowing", selector: { entity: { filter: [{ domain: ["switch","select"] }] } } },
+      { name: "rain_detection_during", selector: { entity: { filter: [{ domain: ["switch","select"] }] } } },
+    ],
+  },
+  {
     type: "expandable", name: "", title: "Erreurs et stats", icon: "mdi:alert-circle-outline",
     schema: [
       { name: "error", selector: { entity: { filter: [{ domain: "sensor" }] } } },
@@ -496,6 +643,29 @@ const SCHEMA = [
     ],
   },
   { name: "camera", selector: { entity: { filter: [{ domain: "camera" }] } } },
+  {
+    type: "expandable", name: "", title: "Connexion et positionnement", icon: "mdi:map-marker-radius",
+    schema: [
+      { name: "activity_mode", selector: { entity: { filter: [{ domain: "sensor" }] } } },
+      { name: "position_type", selector: { entity: { filter: [{ domain: "sensor" }] } } },
+      { name: "satellites_l1", selector: { entity: { filter: [{ domain: "sensor" }] } } },
+      { name: "satellites_l2", selector: { entity: { filter: [{ domain: "sensor" }] } } },
+      { name: "wifi_signal", selector: { entity: { filter: [{ domain: "sensor", device_class: "signal_strength" }] } } },
+      { name: "cellular_signal", selector: { entity: { filter: [{ domain: "sensor", device_class: "signal_strength" }] } } },
+      { name: "bluetooth_signal", selector: { entity: { filter: [{ domain: "sensor", device_class: "signal_strength" }] } } },
+      { name: "firmware", selector: { entity: { filter: [{ domain: "update" }] } } },
+    ],
+  },
+  {
+    type: "expandable", name: "", title: "Commutateurs", icon: "mdi:toggle-switch",
+    schema: [
+      { name: "bluetooth_switch", selector: { entity: { filter: [{ domain: "switch" }] } } },
+      { name: "cloud_switch", selector: { entity: { filter: [{ domain: "switch" }] } } },
+      { name: "led_switch", selector: { entity: { filter: [{ domain: "switch" }] } } },
+      { name: "voice_switch", selector: { entity: { filter: [{ domain: "switch" }] } } },
+      { name: "auto_update_switch", selector: { entity: { filter: [{ domain: "switch" }] } } },
+    ],
+  },
   {
     type: "expandable", name: "", title: "Boutons (repli)", icon: "mdi:gesture-tap-button",
     schema: [
