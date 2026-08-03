@@ -7,7 +7,7 @@
  * https://github.com/junkoku38/mammotion-card
  */
 
-const CARD_VERSION = "1.3.0";
+const CARD_VERSION = "1.3.1";
 
 console.info(
   `%c MAMMOTION-CARD %c v${CARD_VERSION} `,
@@ -184,6 +184,10 @@ class MammotionCard extends HTMLElement {
     e.chartMeta = $(".chartw .est"); e.chartSlot = $(".chartw .slot");
     e.zones = $(".zrs"); e.zonesMeta = $(".zonesw .est"); e.cells = $(".bg4");
     e.footLeft = $(".sf .left"); e.footRight = $(".sf .right");
+    e.camSlot = $(".cam-slot"); e.extraBtns = $(".extra-btns");
+    e.mowGrid = this.shadowRoot.querySelector("#mow-grid");
+    e.connGrid = this.shadowRoot.querySelector("#conn-grid");
+    e.swList = this.shadowRoot.querySelector("#sw-list");
     $(".mstage").addEventListener("click", () => this._more(c.mower || c.state_entity));
     e.segw.querySelectorAll(".sgi").forEach((el) => el.addEventListener("click", () => this._action(el.dataset.a)));
   }
