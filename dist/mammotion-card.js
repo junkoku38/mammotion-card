@@ -7,7 +7,7 @@
  * https://github.com/junkoku38/mammotion-card
  */
 
-const CARD_VERSION = "2.2.0";
+const CARD_VERSION = "2.3.0";
 
 console.info(
   `%c MAMMOTION-CARD %c v${CARD_VERSION} `,
@@ -121,6 +121,38 @@ const THEMES = {
       "--mm-warn": "#d97706",
       "--mm-alert": "#dc2626",
       "--mm-shadow": "0 4px 24px rgba(0,0,0,.08), inset 0 1px 0 rgba(255,255,255,.8)",
+    },
+  },
+  nature: {
+    name: "Nature",
+    vars: {
+      "--mm-bg": "#14210f",
+      "--mm-green": "#8ed867",
+      "--mm-blue": "#8ec9a8",
+      "--mm-warn": "#e0b45c",
+      "--mm-alert": "#e07856",
+      "--mm-txt": "#f0f5e8",
+      "--mm-dim": "rgba(240,245,232,.55)",
+      "--mm-faint": "rgba(240,245,232,.34)",
+      "--mm-panel": "rgba(142,216,103,.06)",
+      "--mm-border": "rgba(142,216,103,.16)",
+      "--mm-radius": "30px",
+      "--mm-radius-sm": "16px",
+      "--mm-shadow": "0 10px 34px rgba(8,14,4,.5)",
+      "--mm-glow-opacity": "1",
+    },
+    lightVars: {
+      "--mm-bg": "#f2f7ea",
+      "--mm-txt": "#1c2b12",
+      "--mm-dim": "rgba(28,43,18,.6)",
+      "--mm-faint": "rgba(28,43,18,.42)",
+      "--mm-panel": "rgba(62,125,31,.06)",
+      "--mm-border": "rgba(62,125,31,.2)",
+      "--mm-green": "#3e7d1f",
+      "--mm-blue": "#2d7a56",
+      "--mm-warn": "#a0742a",
+      "--mm-alert": "#b85c38",
+      "--mm-shadow": "0 6px 20px rgba(62,125,31,.16)",
     },
   },
 };
@@ -265,6 +297,12 @@ class MammotionCard extends HTMLElement {
   disconnectedCallback() { if (this._tick) clearInterval(this._tick); this._tick = null; }
 
   _s(id) { return this._st(id)?.state ?? null; }
+  /* Couleur effective d'une variable de thème : getComputedStyle lit
+     la valeur réellement appliquée (fallback .vars du :host sinon). */
+  _col(name, fb) {
+    try { const v = getComputedStyle(this).getPropertyValue(name).trim(); if (v) return v; } catch (e) {}
+    return fb;
+  }
   _st(id) { return id && this._hass ? this._hass.states[id] : null; }
   _num(id) { if (typeof id === "number") return id; const s = this._st(id); if (!s || isDead(s.state)) return null; const v = Number(s.state); return Number.isNaN(v) ? null : v; }
   _txt(id, fallback = "—") { const s = this._st(id); if (!s || isDead(s.state)) return fallback; return s.state; }
@@ -601,10 +639,10 @@ class MammotionCard extends HTMLElement {
       <div class="mh"><div class="ms"><span class="md"></span><span class="nm"></span> · <b>—</b></div><div class="mk"></div></div>
       <div class="errw hidden"><svg viewBox="0 0 24 24">${I.alert}</svg><span></span></div>
       <div class="mstage"><svg class="dr" viewBox="0 0 180 180">
-        <circle cx="90" cy="90" r="82" fill="none" stroke="rgba(128,128,128,.14)" stroke-width="8"/>
-        <circle class="rp" cx="90" cy="90" r="82" fill="none" stroke="var(--mm-green)" stroke-width="8" stroke-linecap="round" transform="rotate(-90 90 90)"/>
-        <circle cx="90" cy="90" r="66" fill="none" stroke="rgba(128,128,128,.14)" stroke-width="5"/>
-        <circle class="rb" cx="90" cy="90" r="66" fill="none" stroke="${COL.battery}" stroke-width="5" stroke-linecap="round" opacity=".75" transform="rotate(-90 90 90)"/>
+        <circle cx="90" cy="90" r="82" fill="none" class="ring-bg" stroke-width="8"/>
+        <circle class="rp" cx="90" cy="90" r="82" fill="none" stroke-width="8" stroke-linecap="round" transform="rotate(-90 90 90)"/>
+        <circle cx="90" cy="90" r="66" fill="none" class="ring-bg" stroke-width="5"/>
+        <circle class="rb" cx="90" cy="90" r="66" fill="none" stroke-width="5" stroke-linecap="round" opacity=".75" transform="rotate(-90 90 90)"/>
       </svg><div class="mc"><svg class="mi" viewBox="0 0 24 24">${I.mower}</svg><div class="mw">—</div><div class="msb">—</div></div></div>
       <div class="mlg"></div>
       <div class="segw"><div class="pill"></div>
@@ -621,7 +659,7 @@ class MammotionCard extends HTMLElement {
         <div class="accb"><div class="cam-slot"></div></div>
       </details>
       <div class="bg4"></div>
-      ${c.battery && c.show_battery_chart ? `<div class="chartw"><div class="lbl"><span class="k">Batterie · ${Number(c.hours)||4} h</span><span class="est"></span></div><div class="slot"></div><div class="dlegend"><span><i style="border-color:${COL.progress}"></i>batterie</span><span><i></i>progression</span><span class="fl">palier = pause</span></div></div>` : ""}
+      ${c.battery && c.show_battery_chart ? `<div class="chartw"><div class="lbl"><span class="k">Batterie · ${Number(c.hours)||4} h</span><span class="est"></span></div><div class="slot"></div><div class="dlegend"><span><i class="lg-green"></i>batterie</span><span><i class="lg-blue"></i>progression</span><span class="fl">palier = pause</span></div></div>` : ""}
       ${c.mower || c.state_entity ? `<div class="weekw"><div class="lbl"><span class="k">Tonte · 7 jours</span><span class="west"></span></div><div class="wslot"></div></div>` : ""}
       ${c.zones.length ? `<div class="zonesw"><div class="lbl"><span class="k">Zones</span><span class="est"></span></div><div class="zrs"></div></div>` : ""}
 
@@ -676,7 +714,7 @@ class MammotionCard extends HTMLElement {
     const c = this._config, e = this._els; if (!e.chartSlot) return;
     const serieBatt = this._series(c.battery);
     const serieProg = c.progress ? this._series(c.progress) : null;
-    e.chartSlot.innerHTML = buildDual(serieBatt || [], serieProg, 342, 46, COL.progress, COL.battery, "gB");
+    e.chartSlot.innerHTML = buildDual(serieBatt || [], serieProg, 342, 46, this._col("--mm-green", COL.progress), this._col("--mm-blue", COL.battery), "gB");
     /* Légende enrichie : décharge brute + marge de tonte estimée.
        La marge répond à « combien de temps lui reste-t-il », la décharge
        à « comment elle tient ». */
@@ -707,7 +745,9 @@ class MammotionCard extends HTMLElement {
     const mode = this._mode(), progress = this._progress(), batt = this._num(c.battery), rem = this._remainingMinutes();
     const charging = this._s(c.charging) === "on";
     e.card.className = `m-${mode}`;
-    const dotColor = mode === "error" ? COL.alert : mode === "mowing" ? COL.progress : mode === "paused" ? COL.warn : COL.battery;
+    const green = this._col("--mm-green", COL.progress), blue = this._col("--mm-blue", COL.battery),
+      warn = this._col("--mm-warn", COL.warn), alert = this._col("--mm-alert", COL.alert);
+    const dotColor = mode === "error" ? alert : mode === "mowing" ? green : mode === "paused" ? warn : blue;
     e.dot.style.background = dotColor; e.dot.style.boxShadow = `0 0 8px ${dotColor}99`;
     const labels = { mowing: "Tonte", paused: "En pause", returning: "Retour base", docked: charging ? "En charge" : "À la base", error: "Erreur" };
     e.name.textContent = c.name; e.state.textContent = labels[mode];
@@ -721,7 +761,7 @@ class MammotionCard extends HTMLElement {
     const C1 = 2 * Math.PI * 82, C2 = 2 * Math.PI * 66;
     e.ringProg.setAttribute("stroke-dasharray", `${(C1 * (progress ?? 0)).toFixed(1)} ${C1.toFixed(1)}`);
     e.ringBatt.setAttribute("stroke-dasharray", `${(C2 * ((batt ?? 0) / 100)).toFixed(1)} ${C2.toFixed(1)}`);
-    e.ringBatt.setAttribute("stroke", batt != null && batt <= 20 ? COL.warn : COL.battery);
+    e.ringBatt.setAttribute("stroke", batt != null && batt <= 20 ? warn : blue);
     if (mode === "mowing" && rem != null) { const h = Math.floor(rem / 60), m = Math.round(rem % 60); e.big.innerHTML = h > 0 ? `${h}<span>h</span>${String(m).padStart(2,"0")}` : `${m}<span>min</span>`; }
     else if (mode === "mowing" && progress != null) e.big.innerHTML = `${Math.round(progress * 100)}<span>%</span>`;
     else if (batt != null) e.big.innerHTML = `${Math.round(batt)}<span>%</span>`;
@@ -744,7 +784,7 @@ class MammotionCard extends HTMLElement {
     const battEnd = mode === "mowing" && batt != null && this._mowingMargin()
       ? Math.max(0, Math.round(batt - this._mowingMargin().rate * ((rem ?? 0) / 60)))
       : null;
-    e.legend.innerHTML = `<span><i style="background:${COL.progress}"></i>Tonte ${progress != null ? `${Math.round(progress * 100)} %` : "—"}</span><span><i style="background:${COL.battery}"></i>Batterie ${batt != null ? `${Math.round(batt)} %` : "—"}${battEnd != null ? ` → ${battEnd} % fin` : ""}</span><span class="mr">${finish ? `fin ${this._hhmm(finish)}` : ""}</span>`;
+    e.legend.innerHTML = `<span><i style="background:${green}"></i>Tonte ${progress != null ? `${Math.round(progress * 100)} %` : "—"}</span><span><i style="background:${blue}"></i>Batterie ${batt != null ? `${Math.round(batt)} %` : "—"}${battEnd != null ? ` → ${battEnd} % fin` : ""}</span><span class="mr">${finish ? `fin ${this._hhmm(finish)}` : ""}</span>`;
     const activeSeg = mode === "mowing" ? 0 : mode === "paused" ? 1 : 2;
     /* Avec 4 segments (Annuler ajouté), la largeur de la pastille suit. */
     const segCount = this._els.segw ? this._els.segw.querySelectorAll(".sgi").length : 3;
@@ -982,6 +1022,12 @@ ha-card::after{content:"";position:absolute;left:20px;right:20px;top:0;height:1p
 .mstage{position:relative;width:180px;margin:20px auto 0;z-index:1;cursor:pointer;}
 .dr{display:block;width:180px;height:180px;}
 .dr circle{transition:stroke-dasharray .6s ease,stroke .3s;}
+/* Couleurs des anneaux en CSS : var() ne fonctionne pas dans les
+   attributs SVG, uniquement dans les propriétés CSS. .rp suit le
+   vert du thème ; .rb passe en warn sous 20 % (géré en JS). */
+.dr .ring-bg{stroke:var(--mm-border);}
+.dr .rp{stroke:var(--mm-green);}
+.dr .rb{stroke:var(--mm-blue);}
 .mc{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:7px;pointer-events:none;}
 .mi{width:21px;height:21px;fill:var(--mm-green);}
 .m-docked .mi,.m-returning .mi{fill:var(--mm-blue);}
@@ -1024,6 +1070,7 @@ ha-card::after{content:"";position:absolute;left:20px;right:20px;top:0;height:1p
 /* Légende du graphe : paliers = pauses/blocages, ligne pointillée = progression */
 .chartw .dlegend{display:flex;gap:12px;margin-top:6px;font-size:8.5px;color:var(--mm-faint);}
 .chartw .dlegend i{width:10px;height:0;border-top:2px dashed var(--mm-blue);display:inline-block;margin-right:4px;vertical-align:middle;}
+.chartw .dlegend i.lg-green{border-top:2px solid var(--mm-green);}
 .chartw .dlegend .fl{border-top:2px dashed rgba(255,199,107,.7);margin-left:auto;}
 .zonesw{margin-top:18px;position:relative;z-index:1;}
 .zrs{display:flex;flex-direction:column;gap:1px;}
@@ -1157,6 +1204,49 @@ ha-card::after{content:"";position:absolute;left:20px;right:20px;top:0;height:1p
 :host([data-theme="modern"]) .m-docked .glow{background:radial-gradient(85% 50% at 50% 6%,rgba(96,165,250,.18),transparent 62%);}
 :host([data-theme="modern"]) .m-paused .glow{background:radial-gradient(85% 50% at 50% 6%,rgba(251,191,36,.18),transparent 62%);}
 :host([data-theme="modern"]) .m-error .glow{background:radial-gradient(88% 55% at 50% 6%,rgba(248,113,113,.28),transparent 62%);}
+
+/* NATURE : palette verte organique, bord de pelouse en haut, formes
+   très arrondies — la carte évoque le jardin qu'elle entretient. */
+:host([data-theme="nature"]) ha-card{padding:26px 18px 16px;}
+/* Bord de pelouse : double ligne d'herbe irrégulière en haut de carte,
+   purement décorative, sous le contenu (z-index:0). */
+:host([data-theme="nature"]) ha-card::after{
+  content:"";position:absolute;left:0;right:0;top:0;height:10px;pointer-events:none;
+  background:
+    radial-gradient(6px 14px at 8% 100%,var(--mm-green) 98%,transparent),
+    radial-gradient(5px 11px at 16% 100%,var(--mm-green) 98%,transparent),
+    radial-gradient(7px 16px at 24% 100%,var(--mm-green) 98%,transparent),
+    radial-gradient(5px 12px at 33% 100%,var(--mm-green) 98%,transparent),
+    radial-gradient(6px 15px at 41% 100%,var(--mm-green) 98%,transparent),
+    radial-gradient(5px 11px at 50% 100%,var(--mm-green) 98%,transparent),
+    radial-gradient(7px 16px at 58% 100%,var(--mm-green) 98%,transparent),
+    radial-gradient(5px 12px at 66% 100%,var(--mm-green) 98%,transparent),
+    radial-gradient(6px 14px at 74% 100%,var(--mm-green) 98%,transparent),
+    radial-gradient(5px 11px at 83% 100%,var(--mm-green) 98%,transparent),
+    radial-gradient(7px 15px at 91% 100%,var(--mm-green) 98%,transparent),
+    radial-gradient(5px 13px at 99% 100%,var(--mm-green) 98%,transparent);
+  opacity:.55;filter:saturate(1.1);}
+:host([data-theme="nature"]) .mstage{margin-top:26px;}
+:host([data-theme="nature"]) .glow{background:radial-gradient(85% 50% at 50% 6%,rgba(142,216,103,.2),transparent 62%);}
+:host([data-theme="nature"]) .m-docked .glow,:host([data-theme="nature"]) .m-returning .glow{background:radial-gradient(85% 50% at 50% 6%,rgba(142,201,168,.16),transparent 62%);}
+:host([data-theme="nature"]) .m-paused .glow{background:radial-gradient(85% 50% at 50% 6%,rgba(224,180,92,.16),transparent 62%);}
+:host([data-theme="nature"]) .m-error .glow{background:radial-gradient(88% 55% at 50% 6%,rgba(224,120,86,.26),transparent 62%);}
+:host([data-theme="nature"]) .segw{border-radius:var(--mm-radius-sm);}
+:host([data-theme="nature"]) .pill{border-radius:calc(var(--mm-radius-sm) - 4px);background:rgba(142,216,103,.14);box-shadow:inset 0 0 0 1px rgba(142,216,103,.25);}
+:host([data-theme="nature"]) .sgi.on span{color:var(--mm-green);}
+:host([data-theme="nature"]) .bc4{border-radius:var(--mm-radius-sm);}
+:host([data-theme="nature"]) .acc{border-radius:var(--mm-radius-sm);}
+:host([data-theme="nature"]) .gc{border-radius:12px;}
+:host([data-theme="nature"]) .eb{border-radius:var(--mm-radius-sm);}
+:host([data-theme="nature"]) .activity-btns .eb{background:rgba(142,216,103,.1);border-color:rgba(142,216,103,.28);color:var(--mm-green);}
+:host([data-theme="nature"]) .activity-btns .eb:hover{background:rgba(142,216,103,.18);}
+:host([data-theme="nature"]) .wb i{background:linear-gradient(180deg,var(--mm-green),rgba(142,216,103,.6));}
+:host([data-theme="nature"]) .zb i{background:linear-gradient(90deg,var(--mm-green),rgba(142,216,103,.65));}
+:host([data-theme="nature"]) .zp.done{color:var(--mm-green);}
+:host([data-theme="nature"]) .ctl-slider::-webkit-slider-thumb{border-color:#14210f;}
+:host([data-theme="nature"]) .ctl-slider::-moz-range-thumb{border-color:#14210f;}
+:host([data-theme="nature"]) .sw-t.on{background:rgba(142,216,103,.3);}
+:host([data-theme="nature"]) .sw-t.on::after{left:16px;background:var(--mm-green);}
 `;
 
 

@@ -48,7 +48,7 @@ sync_rtk_button: button.jardin_luba_vszztydu_synchroniser_rtk_et_base
 hours: 4
 show_battery_chart: true
 show_phases: true
-theme: glass  # glass | minimal | modern
+theme: glass  # glass | minimal | modern | nature
 ```
 
 ## Nouveautés v1.4.0
@@ -162,6 +162,17 @@ task_path: sensor.jardin_luba_vszztydu_zone_de_tache_path
   colorées permet de voir et sélectionner le thème d'un coup d'œil.
 - **Adaptation automatique** : chaque thème suit le mode clair/sombre
   de Home Assistant.
+
+## Nouveautés v2.3.0 — thème Nature
+
+- **Nouveau design `nature`** : palette verte organique (vert feuillage,
+  vert sauge, terre cuite), bord de pelouse décoratif en haut de carte,
+  formes très arrondies — la carte évoque le jardin qu'elle entretient.
+- **Correction anneaux** : l'anneau de progression était invisible depuis
+  la v2.2.0 (`var()` ne fonctionne pas dans les attributs SVG) — les
+  couleurs vivent désormais en CSS.
+- **Couleurs synchronisées au thème** : anneaux, courbes de batterie,
+  légendes suivent la palette du thème choisi, en mode sombre et clair.
 
 ## Licence
 
