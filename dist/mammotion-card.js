@@ -7,7 +7,7 @@
  * https://github.com/junkoku38/mammotion-card
  */
 
-const CARD_VERSION = "1.4.0";
+const CARD_VERSION = "1.5.0";
 
 console.info(
   `%c MAMMOTION-CARD %c v${CARD_VERSION} `,
@@ -221,6 +221,7 @@ class MammotionCard extends HTMLElement {
     this._built = true;
     const $ = (s) => this.shadowRoot.querySelector(s); const e = this._els; const c = this._config;
     e.card = $("ha-card"); e.dot = $(".ms .md"); e.name = $(".ms .nm"); e.state = $(".ms b"); e.chips = $(".mk");
+    e.errBanner = $(".errw"); e.errTxt = $(".errw span");
     e.ringProg = $(".dr .rp"); e.ringBatt = $(".dr .rb"); e.big = $(".mw"); e.bigSub = $(".msb"); e.legend = $(".mlg");
     e.segw = $(".segw"); e.phases = $(".phw"); e.pbSlot = $(".phw .slot"); e.phRow = $(".phr");
     e.chartMeta = $(".chartw .est"); e.chartSlot = $(".chartw .slot");
@@ -231,13 +232,19 @@ class MammotionCard extends HTMLElement {
     e.connGrid = this.shadowRoot.querySelector("#conn-grid");
     e.swList = this.shadowRoot.querySelector("#sw-list");
     $(".mstage").addEventListener("click", () => this._more(c.mower || c.state_entity));
+    if (e.errBanner) e.errBanner.addEventListener("click", () => this._more(c.error || c.error_code || c.mower));
     e.segw.querySelectorAll(".sgi").forEach((el) => el.addEventListener("click", () => this._action(el.dataset.a)));
   }
 
   _template() {
     const c = this._config;
+    /* Organisation : état → actions groupées → infos live → données →
+       réglages. Les actions éparpillées (segmenté en haut, activités et
+       extras noyés sous les phases/caméra) demandaient de chercher ;
+       elles vivent désormais ensemble, juste sous l'état. */
     return `<ha-card><div class="glow"></div>
       <div class="mh"><div class="ms"><span class="md"></span><span class="nm"></span> · <b>—</b></div><div class="mk"></div></div>
+      <div class="errw hidden"><svg viewBox="0 0 24 24">${I.alert}</svg><span></span></div>
       <div class="mstage"><svg class="dr" viewBox="0 0 180 180">
         <circle cx="90" cy="90" r="82" fill="none" stroke="rgba(255,255,255,.07)" stroke-width="8"/>
         <circle class="rp" cx="90" cy="90" r="82" fill="none" stroke="${COL.progress}" stroke-width="8" stroke-linecap="round" transform="rotate(-90 90 90)"/>
@@ -250,10 +257,11 @@ class MammotionCard extends HTMLElement {
         <div class="sgi" data-a="pause"><span>Pause</span></div>
         <div class="sgi" data-a="dock"><span>Base</span></div>
       </div>
+      <div class="activity-btns hidden"></div>
+      <div class="extra-btns hidden"></div>
       ${c.show_phases ? `<div class="phw"><div class="slot"></div><div class="phr"></div></div>` : ""}
       <div class="cam-slot"></div>
-      <div class="extra-btns hidden"></div>
-      <div class="activity-btns hidden"></div>
+      <div class="bg4"></div>
       ${c.battery && c.show_battery_chart ? `<div class="chartw"><div class="lbl"><span class="k">Batterie · ${Number(c.hours)||4} h</span><span class="est"></span></div><div class="slot"></div></div>` : ""}
       ${c.zones.length ? `<div class="zonesw"><div class="lbl"><span class="k">Zones</span><span class="est"></span></div><div class="zrs"></div></div>` : ""}
 
@@ -272,7 +280,6 @@ class MammotionCard extends HTMLElement {
         <div class="accb" id="sw-list"></div>
       </details>
 
-      <div class="bg4"></div>
       <div class="sf"><span class="left"></span><span class="right"></span></div></ha-card>`;
   }
 
@@ -377,6 +384,12 @@ class MammotionCard extends HTMLElement {
        numerique non nul est present. Le texte de derniere_erreur reste stocke
        meme apres resolution, donc il ne peut pas seul indiquer une erreur active. */
     const hasErr = mode === "error" || (errCode && !["0","none","no_error","unknown","—","null"].includes(norm(errCode)));
+    /* Bannière : l'erreur doit sauter aux yeux dès l'ouverture de la carte,
+       pas se noyer dans le pied. Rouge = regarder la tondeuse maintenant. */
+    if (e.errBanner) {
+      e.errBanner.classList.toggle("hidden", !hasErr);
+      if (hasErr) e.errTxt.textContent = this._errorText() || errCode || "Erreur active";
+    }
     e.footLeft.innerHTML = `<i class="${hasErr ? "warn" : ""}"></i>${hasErr ? esc(this._errorText() || errCode || "Erreur active") : "Aucune erreur"}`;
     const wear = this._num(c.blade_wear), km = this._num(c.odometer);
     /* Lame : les heures d'utilisation sont plus parlantes qu'un pourcentage
@@ -534,6 +547,15 @@ ha-card::after{content:"";position:absolute;left:20px;right:20px;top:0;height:1p
 .m-error{border-color:rgba(255,107,92,.38);}
 .m-error .glow{background:radial-gradient(88% 55% at 50% 6%,rgba(255,107,92,.22),transparent 62%);}
 .mh{display:flex;align-items:center;justify-content:space-between;gap:8px;position:relative;z-index:1;}
+/* Bannière d'erreur : au-dessus de tout, rouge — une faute bloquante
+   demande un déplacement physique de la tondeuse, elle ne se règle pas
+   en cliquant. */
+.errw{display:flex;align-items:center;gap:10px;margin-top:12px;padding:11px 13px;border-radius:13px;
+  background:rgba(255,107,92,.13);border:1px solid rgba(255,107,92,.38);position:relative;z-index:1;
+  font-size:11px;font-weight:600;color:#ffb3aa;cursor:pointer;}
+.errw.hidden{display:none;}
+.errw svg{width:16px;height:16px;fill:#ff8a7a;flex-shrink:0;}
+.errw span{min-width:0;}
 .ms{display:flex;align-items:center;gap:7px;font-size:11.5px;color:rgba(255,255,255,.55);min-width:0;}
 .ms .nm{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
 .ms b{color:#eef1f6;font-weight:600;white-space:nowrap;}
@@ -590,9 +612,9 @@ ha-card::after{content:"";position:absolute;left:20px;right:20px;top:0;height:1p
 .cam-slot > *{display:block;width:100%;}
 .cam-slot img{display:block;width:100%;border-radius:12px;}
 
-.extra-btns{display:flex;gap:7px;margin-top:14px;position:relative;z-index:1;}
+.extra-btns{display:flex;gap:7px;margin-top:8px;position:relative;z-index:1;}
 .extra-btns.hidden{display:none;}
-.activity-btns{display:flex;gap:7px;margin-top:14px;position:relative;z-index:1;}
+.activity-btns{display:flex;gap:7px;margin-top:8px;position:relative;z-index:1;}
 .activity-btns.hidden{display:none;}
 .eb{flex:1;text-align:center;font-size:11px;font-weight:600;padding:10px 0;border-radius:12px;
   background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.10);color:rgba(255,255,255,.72);cursor:pointer;transition:.15s;}
