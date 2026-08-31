@@ -7,7 +7,7 @@
  * https://github.com/junkoku38/mammotion-card
  */
 
-const CARD_VERSION = "3.0.2";
+const CARD_VERSION = "3.1.0";
 
 console.info(
   `%c MAMMOTION-CARD %c v${CARD_VERSION} `,
@@ -612,7 +612,7 @@ class MammotionCard extends HTMLElement {
     e.weekSlot = $(".wslot"); e.weekMeta = $(".weekw .west");
     e.zones = $(".zrs"); e.zonesMeta = $(".zonesw .est"); e.cells = $(".bg4");
     e.footLeft = $(".sf .left"); e.footRight = $(".sf .right");
-    e.camSlot = $(".cam-slot"); e.extraBtns = $(".extra-btns"); e.actBtns = $(".activity-btns");
+    e.camSlot = $(".cam-slot"); e.extraBtns = $(".extra-btns"); e.actBtns = $(".activity-btns"); e.syncBtns = $(".sync-btns");
     e.mowGrid = this.shadowRoot.querySelector("#mow-grid");
     e.connGrid = this.shadowRoot.querySelector("#conn-grid");
     e.swList = this.shadowRoot.querySelector("#sw-list");
@@ -645,6 +645,7 @@ class MammotionCard extends HTMLElement {
       </div>
       <div class="activity-btns hidden"></div>
       <div class="extra-btns hidden"></div>
+      <div class="sync-btns hidden"></div>
       ${c.show_phases ? `<div class="phw"><div class="slot"></div><div class="phr"></div></div>` : ""}
       <details class="acc acc-cam">
         <summary class="accs"><span class="k">Caméra</span><svg class="car" viewBox="0 0 24 24"><path d="M7 10l5 5 5-5z"/></svg></summary>
@@ -927,9 +928,6 @@ class MammotionCard extends HTMLElement {
       if (c.edge_button) btns.push({ label: "Bordure", id: c.edge_button });
       if (c.leave_dock_button) btns.push({ label: "Quitter la base", id: c.leave_dock_button });
       if (c.restart_button) btns.push({ label: "Redémarrer", id: c.restart_button, ghost: true });
-      if (c.sync_map_button) btns.push({ label: "Synchro cartes", id: c.sync_map_button, ghost: true });
-      if (c.sync_schedule_button) btns.push({ label: "Synchro plannings", id: c.sync_schedule_button, ghost: true });
-      if (c.sync_rtk_button) btns.push({ label: "Synchro RTK", id: c.sync_rtk_button, ghost: true });
       this._els.extraBtns.innerHTML = btns.map((b, i) =>
         `<div class="eb${b.ghost ? " ghost" : ""}" data-i="${i}">${esc(b.label)}</div>`
       ).join("");
@@ -938,6 +936,27 @@ class MammotionCard extends HTMLElement {
         el.addEventListener("click", (ev) => {
           ev.stopPropagation();
           const b = btns[Number(el.dataset.i)];
+          const d = domainOf(b.id);
+          if (d === "button" || d === "input_button") this._hass.callService(d, "press", { entity_id: b.id });
+        });
+      });
+    }
+
+    /* Boutons synchro : ligne dédiée, discrets (un clic peut repousser
+       un lot entier à la tondeuse — on ne les montre pas au premier plan). */
+    if (this._els.syncBtns) {
+      const syns = [];
+      if (c.sync_map_button) syns.push({ label: "Synchro cartes", id: c.sync_map_button });
+      if (c.sync_schedule_button) syns.push({ label: "Synchro plannings", id: c.sync_schedule_button });
+      if (c.sync_rtk_button) syns.push({ label: "Synchro RTK", id: c.sync_rtk_button });
+      this._els.syncBtns.innerHTML = syns.map((b, i) =>
+        `<div class="eb sync" data-i="${i}">${esc(b.label)}</div>`
+      ).join("");
+      this._els.syncBtns.classList.toggle("hidden", !syns.length);
+      this._els.syncBtns.querySelectorAll(".eb").forEach((el) => {
+        el.addEventListener("click", (ev) => {
+          ev.stopPropagation();
+          const b = syns[Number(el.dataset.i)];
           const d = domainOf(b.id);
           if (d === "button" || d === "input_button") this._hass.callService(d, "press", { entity_id: b.id });
         });
@@ -1088,6 +1107,12 @@ ha-card::after{content:"";position:absolute;left:20px;right:20px;top:0;height:1p
 .extra-btns.hidden{display:none;}
 .activity-btns{display:flex;gap:7px;margin-top:8px;position:relative;z-index:1;}
 .activity-btns.hidden{display:none;}
+/* Boutons synchro : ligne dédiée, plus discrets que les autres boutons —
+   un clic repousse des données à la tondeuse, c'est un geste de maintenance. */
+.sync-btns{display:flex;gap:7px;margin-top:8px;position:relative;z-index:1;}
+.sync-btns.hidden{display:none;}
+.sync-btns .eb{font-size:10.5px;padding:8px 0;opacity:.85;background:transparent;border-style:dashed;}
+.sync-btns .eb:hover{opacity:1;background:var(--mm-panel);}
 .eb{flex:1;text-align:center;font-size:11px;font-weight:600;padding:10px 0;border-radius:12px;
   background:var(--mm-panel);border:1px solid var(--mm-border);color:rgba(255,255,255,.72);cursor:pointer;transition:.15s;}
 .eb:hover{background:rgba(255,255,255,.1);}

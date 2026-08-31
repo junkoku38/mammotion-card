@@ -148,6 +148,14 @@ task_path: sensor.jardin_luba_vszztydu_zone_de_tache_path
   un code inconnu) est remplacé par « Code 6404 ».
 - **Micro-interactions** : scale au toucher sur tout élément actionnable.
 
+## Nouveautés v3.1.0 — boutons synchro sur ligne dédiée
+
+Les 3 boutons de synchronisation (cartes, plannings, RTK) passent sur
+leur propre rangée, avec un style discret (filets en pointillé) — un clic
+repousse un lot de données à la tondeuse, c'est une action de maintenance,
+pas une action quotidienne. Les extras (bordure, quitter la base) restent
+sur la ligne du dessus.
+
 ## Nouveautés v3.0.2 — correction faux positif erreur en tonte
 
 Un code résiduel (`error_code` non nul) ne passe plus la carte en mode
