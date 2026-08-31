@@ -7,7 +7,7 @@
  * https://github.com/junkoku38/mammotion-card
  */
 
-const CARD_VERSION = "2.3.0";
+const CARD_VERSION = "2.3.1";
 
 console.info(
   `%c MAMMOTION-CARD %c v${CARD_VERSION} `,
@@ -517,6 +517,22 @@ class MammotionCard extends HTMLElement {
      horodatage brut. « Error message not found » est la chaîne que
      Mammotion publie quand sa table ne connaît pas le code : ce n'est
      pas un message, on affiche le code à la place. */
+  _hasRealError() {
+    const c = this._config;
+    /* Un vrai message d'erreur : ni « No error », ni « none », ni vide.
+       Mammotion publie « common:No error » quand tout va bien — ce texte
+       ne doit jamais déclencher la bannière rouge. */
+    const CLEAN_ERRORS = ["no error", "no_error", "none", "no fault", "no faults", "ok", "normal", "n/a", ""];
+    let txt = this._txt(c.error, null);
+    if (txt) {
+      txt = String(txt).replace(/^common:\s*/i, "").replace(/_/g, " ").trim().toLowerCase();
+      if (/^error message not found\.?$/i.test(txt)) txt = "";
+    } else txt = "";
+    const code = this._txt(c.error_code, null);
+    const codeActive = code && !["0","none","no_error","unknown","—","null","","no error"].includes(norm(code));
+    return Boolean(codeActive || (txt && !CLEAN_ERRORS.includes(txt)));
+  }
+
   _errorText() {
     const c = this._config;
     let txt = this._txt(c.error, null);
@@ -803,10 +819,11 @@ class MammotionCard extends HTMLElement {
     ];
     e.cells.innerHTML = cells.map((x) => `<div class="bc4"><span>${esc(x.k)}</span><b>${esc(x.v)}</b></div>`).join("");
     const errCode = this._txt(c.error_code, null);
-    /* Une erreur n'est active que si le mode est error, ou si un code d'erreur
-       numerique non nul est present. Le texte de derniere_erreur reste stocke
-       meme apres resolution, donc il ne peut pas seul indiquer une erreur active. */
-    const hasErr = mode === "error" || (errCode && !["0","none","no_error","unknown","—","null"].includes(norm(errCode)));
+    /* Une erreur n'est active que si le mode est error ET qu'il y a un
+       texte d'erreur réellement renseigné. Le code seul ne suffit pas :
+       « common:No error » est le texte normal chez Mammotion, et un code
+       ancien reste parfois stocké après résolution. */
+    const hasErr = mode === "error" && this._hasRealError();
     /* Bannière : l'erreur doit sauter aux yeux dès l'ouverture de la carte,
        pas se noyer dans le pied. Rouge = regarder la tondeuse maintenant. */
     if (e.errBanner) {

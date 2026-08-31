@@ -174,6 +174,14 @@ task_path: sensor.jardin_luba_vszztydu_zone_de_tache_path
 - **Couleurs synchronisées au thème** : anneaux, courbes de batterie,
   légendes suivent la palette du thème choisi, en mode sombre et clair.
 
+## Nouveautés v2.3.1 — correction bannière d'erreur
+
+- **Faux positif corrigé** : la bannière rouge s'affichait quand l'entité
+  `error` contenait « common:No error » (état normal Mammotion) — le texte
+  était affiché tel quel après nettoyage. La carte vérifie désormais via
+  `_hasRealError()` que le message est réellement une erreur avant
+  d'afficher quoi que ce soit.
+
 ## Licence
 
 MIT
