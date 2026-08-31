@@ -48,7 +48,7 @@ sync_rtk_button: button.jardin_luba_vszztydu_synchroniser_rtk_et_base
 hours: 4
 show_battery_chart: true
 show_phases: true
-theme: glass  # glass | minimal | modern | nature
+theme: glass  # glass | carbon | blueprint | paper
 ```
 
 ## Nouveautés v1.4.0
@@ -148,46 +148,39 @@ task_path: sensor.jardin_luba_vszztydu_zone_de_tache_path
   un code inconnu) est remplacé par « Code 6404 ».
 - **Micro-interactions** : scale au toucher sur tout élément actionnable.
 
-## Nouveautés v2.2.0 — thèmes visuels
+## Nouveautés v3.0.0 — 4 thèmes, palette fixe
 
-- **Choix du design** : paramètre `theme` avec 3 styles au choix,
-  sélectionnable dans l'éditeur visuel (Affichage → Design de la carte)
-  ou en YAML :
-  - `glass` (défaut) : design original sombre, anneaux et glow radial.
-  - `minimal` : plat, aéré, bordures fines en pointillés, typographie
-    légère — idéal pour un dashboard épuré.
-  - `modern` : gradients, ombres portées, glassmorphism renforcé,
-    effet de bordure lumineuse.
-- **Aperçu rapide** : dans l'éditeur visuel, une rangée de pastilles
-  colorées permet de voir et sélectionner le thème d'un coup d'œil.
-- **Adaptation automatique** : chaque thème suit le mode clair/sombre
-  de Home Assistant.
+Trois thèmes historiques supprimés (minimal, modern, nature), deux nouveaux ajoutés.
+Chaque thème a désormais une **palette fixe** — il ne suit plus le mode clair/sombre de Home Assistant.
 
-## Nouveautés v2.3.0 — thème Nature
+### Thèmes disponibles
 
-- **Nouveau design `nature`** : palette verte organique (vert feuillage,
-  vert sauge, terre cuite), bord de pelouse décoratif en haut de carte,
-  formes très arrondies — la carte évoque le jardin qu'elle entretient.
-- **Correction anneaux** : l'anneau de progression était invisible depuis
-  la v2.2.0 (`var()` ne fonctionne pas dans les attributs SVG) — les
-  couleurs vivent désormais en CSS.
-- **Couleurs synchronisées au thème** : anneaux, courbes de batterie,
-  légendes suivent la palette du thème choisi, en mode sombre et clair.
+| Thème | Palette | Rendu |
+|---|---|---|
+| `glass` (défaut) | Sombre — `#12151c`, vert pastel, bleu | Design original avec glow radial |
+| `carbon` | Sombre — `#141416`, orange `#ff7a18`, vert `#4ade80` | Industriel : filets 1px, monospace, sans arrondi |
+| `blueprint` | Sombre — `#0d1b2e`, cyan `#38bdf8`, bleu `#60a5fa` | Technique : grille de fond discrète, angles adoucis |
+| `paper` | Clair — `#fdfcf9`, vert `#16a34a`, bleu `#0284c7` | Minimaliste clair : filets fins, typographie sobre |
 
-## Nouveautés v2.3.1 — correction bannière d'erreur
+### Sélection
 
-- **Faux positif corrigé** : la bannière rouge s'affichait quand l'entité
-  `error` contenait « common:No error » (état normal Mammotion) — le texte
-  était affiché tel quel après nettoyage. La carte vérifie désormais via
-  `_hasRealError()` que le message est réellement une erreur avant
-  d'afficher quoi que ce soit.
+Dans l'éditeur visuel (section **Affichage** → **Design de la carte**), ou en YAML :
 
-## Nouveautés v2.3.2 — correction « Error message not found »
+```yaml
+type: custom:mammotion-card
+theme: carbon
+```
 
-- **Détection robuste** de la chaîne « error message not found » (et ses
-  variantes : espaces multiples, underscores, faute de frappe, suffixes).
-  La carte affiche désormais « Code 11133 » (le vrai code Mammotion)
-  plutôt que ce message générique.
+Un aperçu visuel avec les vraies couleurs de chaque thème (fond, progression, batterie) est disponible.
+
+### Palette fixe
+
+Les thèmes sombres (`glass`, `carbon`, `blueprint`) restent sombres quand HA passe en clair.
+Le thème clair (`paper`) reste clair. Chaque palette est indépendante du thème HA.
+
+### Fallback silencieux
+
+Un dashboard avec `theme: minimal`, `theme: modern` ou `theme: nature` retombe sur `glass`.
 
 ## Licence
 

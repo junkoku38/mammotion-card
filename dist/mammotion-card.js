@@ -7,7 +7,9 @@
  * https://github.com/junkoku38/mammotion-card
  */
 
-const CARD_VERSION = "2.5.0";
+const CARD_VERSION = "3.0.0";
+
+const THEMES_LIST = Object.entries(THEMES).map(([value, t]) => ({ value, label: t.name }));
 
 console.info(
   `%c MAMMOTION-CARD %c v${CARD_VERSION} `,
@@ -64,6 +66,44 @@ const THEMES = {
       "--mm-radius": "0px",
       "--mm-radius-sm": "0px",
       "--mm-shadow": "none",
+      "--mm-glow-opacity": "0",
+    },
+  },
+  blueprint: {
+    name: "Blueprint",
+    vars: {
+      "--mm-bg": "#0d1b2e",
+      "--mm-green": "#38bdf8",
+      "--mm-blue": "#60a5fa",
+      "--mm-warn": "#fbbf24",
+      "--mm-alert": "#f87171",
+      "--mm-txt": "#e2eefc",
+      "--mm-dim": "rgba(226,238,252,.6)",
+      "--mm-faint": "rgba(226,238,252,.35)",
+      "--mm-panel": "rgba(56,189,248,.08)",
+      "--mm-border": "rgba(56,189,248,.18)",
+      "--mm-radius": "20px",
+      "--mm-radius-sm": "12px",
+      "--mm-shadow": "0 4px 24px rgba(6,13,26,.5)",
+      "--mm-glow-opacity": "1",
+    },
+  },
+  paper: {
+    name: "Paper",
+    vars: {
+      "--mm-bg": "#fdfcf9",
+      "--mm-green": "#16a34a",
+      "--mm-blue": "#0284c7",
+      "--mm-warn": "#b45309",
+      "--mm-alert": "#dc2626",
+      "--mm-txt": "#1c1917",
+      "--mm-dim": "rgba(28,25,23,.65)",
+      "--mm-faint": "rgba(28,25,23,.42)",
+      "--mm-panel": "rgba(28,25,23,.03)",
+      "--mm-border": "rgba(28,25,23,.12)",
+      "--mm-radius": "16px",
+      "--mm-radius-sm": "8px",
+      "--mm-shadow": "0 1px 3px rgba(0,0,0,.06)",
       "--mm-glow-opacity": "0",
     },
   },
@@ -930,9 +970,9 @@ class MammotionCard extends HTMLElement {
 }
 
 MammotionCard.styles = `
-/* Les variables de thème sont définies dynamiquement par _applyTheme()
-   via this.style.setProperty(). Les valeurs ci-dessous sont des fallbacks
-   pour le thème glass sombre. */
+/* glass est la base : toutes les règles ci-dessous ciblent le thème par
+   défaut sans sélecteur [data-theme]. Les variantes (carbon, blueprint,
+   paper) surchargent via :host([data-theme=""]) et leurs propres blocs. */
 :host{--mm-bg:#12151c;--mm-green:#c9f0a8;--mm-blue:#7fb3ff;--mm-warn:#ffc76b;--mm-alert:#ff6b5c;
   --mm-txt:#eef1f6;--mm-dim:rgba(255,255,255,.5);--mm-faint:rgba(255,255,255,.3);
   --mm-panel:rgba(255,255,255,.04);--mm-border:rgba(255,255,255,.07);
@@ -1187,6 +1227,75 @@ ha-card::after{content:"";position:absolute;left:20px;right:20px;top:0;height:1p
 :host([data-theme="carbon"]) .eb:active,
 :host([data-theme="carbon"]) .zr:active,
 :host([data-theme="carbon"]) .sw-row:active{transform:none;}
+
+/* ------------------------------------------------------------------ */
+/* BLUEPRINT : plan technique, bleu, grille de fond discrète            */
+/* ------------------------------------------------------------------ */
+
+:host([data-theme="blueprint"]) ha-card{
+  background-color:var(--mm-bg);border-color:var(--mm-border);
+  background-image:
+    linear-gradient(rgba(56,189,248,.05) 1px,transparent 1px),
+    linear-gradient(90deg,rgba(56,189,248,.05) 1px,transparent 1px);
+  background-size:24px 24px;
+}
+:host([data-theme="blueprint"]) .segw{background:transparent;border-color:var(--mm-border);border-radius:var(--mm-radius-sm);}
+:host([data-theme="blueprint"]) .pill{background:rgba(56,189,248,.14);box-shadow:inset 0 0 0 1px rgba(56,189,248,.3);}
+:host([data-theme="blueprint"]) .sgi.on span{color:var(--mm-green);}
+:host([data-theme="blueprint"]) .bc4{border-radius:var(--mm-radius-sm);}
+:host([data-theme="blueprint"]) .acc{border-radius:var(--mm-radius-sm);}
+:host([data-theme="blueprint"]) .gc{border-radius:6px;}
+:host([data-theme="blueprint"]) .eb{border-radius:var(--mm-radius-sm);}
+:host([data-theme="blueprint"]) .activity-btns .eb{background:rgba(56,189,248,.1);border-color:rgba(56,189,248,.22);color:var(--mm-green);}
+:host([data-theme="blueprint"]) .activity-btns .eb:hover{background:rgba(56,189,248,.18);}
+:host([data-theme="blueprint"]) .errw{border-radius:var(--mm-radius-sm);background:rgba(248,113,113,.08);border-color:rgba(248,113,113,.35);}
+:host([data-theme="blueprint"]) .cam-slot{border-radius:var(--mm-radius-sm);}
+:host([data-theme="blueprint"]) .lk.rain{background:rgba(74,222,128,.08);border-color:rgba(74,222,128,.2);color:#8ec9a8;}
+:host([data-theme="blueprint"]) .dr .ring-bg{stroke:var(--mm-border);}
+:host([data-theme="blueprint"]) .wb i{background:linear-gradient(180deg,var(--mm-green),rgba(56,189,248,.55));border-radius:3px 3px 0 0;opacity:.85;}
+:host([data-theme="blueprint"]) .zb i{background:linear-gradient(90deg,var(--mm-green),rgba(56,189,248,.55));opacity:.85;}
+:host([data-theme="blueprint"]) .zp.done{color:var(--mm-green);}
+:host([data-theme="blueprint"]) .sw-t.on{background:rgba(56,189,248,.28);}
+:host([data-theme="blueprint"]) .sw-t.on::after{background:var(--mm-green);}
+:host([data-theme="blueprint"]) .ctl-slider::-webkit-slider-thumb{background:var(--mm-green);border-color:#0d1b2e;}
+:host([data-theme="blueprint"]) .ctl-slider::-moz-range-thumb{background:var(--mm-green);border-color:#0d1b2e;}
+
+/* ------------------------------------------------------------------ */
+/* PAPER : clair, typographique, bordures fines                         */
+/* ------------------------------------------------------------------ */
+
+:host([data-theme="paper"]) .glow,.m-docked .glow,.m-returning .glow,.m-paused .glow,.m-error .glow{display:none;}
+:host([data-theme="paper"]) ha-card{border-width:1px;border-color:var(--mm-border);background:var(--mm-bg);}
+:host([data-theme="paper"]) .segw{background:transparent;border-color:var(--mm-border);border-radius:var(--mm-radius-sm);}
+:host([data-theme="paper"]) .pill{border-radius:calc(var(--mm-radius-sm) - 4px);background:var(--mm-green);opacity:.1;box-shadow:none;}
+:host([data-theme="paper"]) .sgi.on span{color:var(--mm-green);}
+:host([data-theme="paper"]) .bc4{background:transparent;border:1px solid var(--mm-border);border-radius:var(--mm-radius-sm);}
+:host([data-theme="paper"]) .bc4 span{color:var(--mm-faint);font-weight:500;letter-spacing:.8px;}
+:host([data-theme="paper"]) .acc{background:transparent;border-color:var(--mm-border);border-radius:var(--mm-radius-sm);}
+:host([data-theme="paper"]) .gc{background:transparent;border-color:var(--mm-border);border-radius:4px;}
+:host([data-theme="paper"]) .eb{border-radius:var(--mm-radius-sm);border:1px solid var(--mm-border);background:transparent;font-family:inherit;}
+:host([data-theme="paper"]) .activity-btns .eb{background:rgba(22,163,74,.06);border-color:rgba(22,163,74,.18);color:var(--mm-green);}
+:host([data-theme="paper"]) .activity-btns .eb:hover{background:rgba(22,163,74,.12);}
+:host([data-theme="paper"]) .errw{border-radius:var(--mm-radius-sm);background:rgba(220,38,38,.06);border-color:rgba(220,38,38,.25);}
+:host([data-theme="paper"]) .cam-slot{border-radius:var(--mm-radius-sm);overflow:hidden;border-color:var(--mm-border);}
+:host([data-theme="paper"]) .lk{background:transparent;border-color:var(--mm-border);color:var(--mm-dim);}
+:host([data-theme="paper"]) .lk.rain{background:rgba(2,132,199,.06);border-color:rgba(2,132,199,.2);color:var(--mm-blue);}
+:host([data-theme="paper"]) .dr .ring-bg{stroke:rgba(28,25,23,.12);}
+:host([data-theme="paper"]) .mi{fill:var(--mm-green);}
+:host([data-theme="paper"]) .m-docked .mi,.m-returning .mi{fill:var(--mm-blue);}
+:host([data-theme="paper"]) .m-paused .mi{fill:var(--mm-warn);}
+:host([data-theme="paper"]) .m-error .mi{fill:var(--mm-alert);}
+:host([data-theme="paper"]) .wb i{background:var(--mm-green);opacity:.75;border-radius:2px 2px 0 0;}
+:host([data-theme="paper"]) .zb i{background:var(--mm-green);opacity:.75;}
+:host([data-theme="paper"]) .zp.done{color:var(--mm-green);}
+:host([data-theme="paper"]) .sw-t{border-radius:var(--mm-radius-sm);background:rgba(28,25,23,.1);}
+:host([data-theme="paper"]) .sw-t::after{background:rgba(28,25,23,.35);}
+:host([data-theme="paper"]) .sw-t.on{background:rgba(22,163,74,.3);}
+:host([data-theme="paper"]) .sw-t.on::after{background:var(--mm-green);}
+:host([data-theme="paper"]) .ctl-slider::-webkit-slider-thumb{background:var(--mm-green);border-color:var(--mm-bg);}
+:host([data-theme="paper"]) .ctl-slider::-moz-range-thumb{background:var(--mm-green);border-color:var(--mm-bg);}
+:host([data-theme="paper"]) .ctl-sel{background:transparent;border-color:var(--mm-border);color:var(--mm-txt);}
+:host([data-theme="paper"]) .sf .left i{background:var(--mm-green);}
 `;
 
 
@@ -1210,7 +1319,7 @@ const FLAT_KEYS = [
   "wifi_signal","cellular_signal","bluetooth_signal","firmware",
   "bluetooth_switch","cloud_switch","led_switch","voice_switch","auto_update_switch",
   "activity_1_button","activity_2_button","activity_3_button",
-  "hours","points","refresh","show_battery_chart","show_phases",
+  "hours","points","refresh","show_battery_chart","show_phases","theme",
 ];
 const MANAGED_KEYS = [...FLAT_KEYS, "type", "zones", "activity_1_label", "activity_2_label", "activity_3_label"];
 
@@ -1277,6 +1386,7 @@ const LABELS = {
   task_path: "Tâche en cours (chemin)",
   hours: "Fenêtre d'historique", points: "Échantillons", refresh: "Relecture",
   show_battery_chart: "Afficher la courbe de batterie", show_phases: "Afficher les phases",
+  theme: "Design de la carte",
 };
 
 const HELPERS = {
@@ -1401,6 +1511,15 @@ const SCHEMA = [
     type: "expandable", name: "", title: "Affichage", icon: "mdi:tune",
     schema: [
       {
+        name: "theme",
+        selector: {
+          select: {
+            options: Object.entries(THEMES).map(([value, t]) => ({ value, label: t.name })),
+            mode: "dropdown",
+          },
+        },
+      },
+      {
         type: "grid", name: "",
         schema: [
           { name: "hours", selector: { number: { min: 1, max: 72, mode: "box", unit_of_measurement: "h" } } },
@@ -1437,12 +1556,13 @@ class MammotionCardEditor extends HTMLElement {
       return;
     }
     if (!this._form) {
-      this.shadowRoot.innerHTML = `<style>${MammotionCardEditor.styles}</style><div class="wrap"></div><div class="note"></div>`;
+      this.shadowRoot.innerHTML = `<style>${MammotionCardEditor.styles}</style><div class="theme-preview"></div><div class="wrap"></div><div class="note"></div>`;
       this._form = document.createElement("ha-form");
       this._form.computeLabel = (s) => LABELS[s.name] || s.name;
       this._form.computeHelper = (s) => HELPERS[s.name] || "";
-      this._form.addEventListener("value-changed", (ev) => { ev.stopPropagation(); fireEvent(this, "config-changed", { config: this._merge(ev.detail.value) }); });
+      this._form.addEventListener("value-changed", (ev) => { ev.stopPropagation(); this._renderThemePreview(ev.detail.value?.theme); fireEvent(this, "config-changed", { config: this._merge(ev.detail.value) }); });
       this.shadowRoot.querySelector(".wrap").appendChild(this._form);
+      this._renderThemePreview(this._config?.theme);
     }
     this._form.hass = this._hass; this._form.schema = SCHEMA; this._form.data = this._data();
     const extra = this._unmanaged();
@@ -1450,8 +1570,44 @@ class MammotionCardEditor extends HTMLElement {
     if (extra.length) { note.innerHTML = `<div class="keep">Conservé sans être éditable ici : <b></b>.</div>`; note.querySelector("b").textContent = extra.join(", "); }
     else note.innerHTML = "";
   }
+
+  _renderThemePreview(selected) {
+    const host = this.shadowRoot?.querySelector(".theme-preview");
+    if (!host) return;
+    const cur = selected || this._config?.theme || DEFAULT_THEME;
+    host.innerHTML = `<div class="tp-label">Aperçu rapide</div><div class="tp-row">${
+      Object.entries(THEMES).map(([key, t]) => {
+        const v = t.vars;
+        const on = key === cur;
+        return `<div class="tp${on ? " on" : ""}" data-t="${key}" title="${esc(t.name)}">
+          <span class="tp-dot" style="background:${v["--mm-bg"]}"></span>
+          <span class="tp-dot" style="background:${v["--mm-green"]}"></span>
+          <span class="tp-dot" style="background:${v["--mm-blue"]}"></span>
+          <span class="tp-name">${esc(t.name.split(" ")[0])}</span>
+        </div>`;
+      }).join("")
+    }</div>`;
+    host.querySelectorAll(".tp").forEach((el) => el.addEventListener("click", () => {
+      const t = el.dataset.t;
+      const newData = { ...this._data(), theme: t };
+      this._form.data = newData;
+      this._renderThemePreview(t);
+      fireEvent(this, "config-changed", { config: this._merge(newData) });
+    }));
+  }
 }
-MammotionCardEditor.styles = `:host{display:block;}.warn{padding:10px;border-radius:8px;background:var(--warning-color,#dfb37a);color:#1c1c1c;font-size:12px;}.keep{margin-top:12px;padding:10px;border-radius:8px;background:rgba(143,176,201,.16);border:1px solid rgba(143,176,201,.4);font-size:12px;}`;
+MammotionCardEditor.styles = `:host{display:block;}.warn{padding:10px;border-radius:8px;background:var(--warning-color,#dfb37a);color:#1c1c1c;font-size:12px;}.keep{margin-top:12px;padding:10px;border-radius:8px;background:rgba(143,176,201,.16);border:1px solid rgba(143,176,201,.4);font-size:12px;}
+
+/* Apercu rapide des themes dans l'editeur */
+.tp-label{font-size:11px;font-weight:600;color:var(--secondary-text-color,#727272);margin-bottom:8px;letter-spacing:.5px;text-transform:uppercase;}
+.tp-row{display:flex;gap:10px;margin-bottom:16px;}
+.tp{flex:1;display:flex;align-items:center;gap:6px;padding:10px 12px;border-radius:10px;border:2px solid var(--divider-color,#e0e0e0);cursor:pointer;transition:.15s;background:var(--card-background-color,#fff);}
+.tp:hover{border-color:var(--primary-color,#03a9f4);}
+.tp.on{border-color:var(--primary-color,#03a9f4);background:rgba(3,169,244,.06);}
+.tp-dot{width:12px;height:12px;border-radius:50%;flex-shrink:0;}
+.tp-dot:first-child{width:14px;height:14px;border:1px solid rgba(0,0,0,.12);}
+.tp-name{font-size:12px;font-weight:600;color:var(--primary-text-color,#212121);margin-left:auto;}
+`;
 
 if (!customElements.get("mammotion-card-editor")) customElements.define("mammotion-card-editor", MammotionCardEditor);
 
