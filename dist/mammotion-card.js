@@ -7,7 +7,7 @@
  * https://github.com/junkoku38/mammotion-card
  */
 
-const CARD_VERSION = "2.0.0";
+const CARD_VERSION = "2.1.0";
 
 console.info(
   `%c MAMMOTION-CARD %c v${CARD_VERSION} `,
@@ -55,7 +55,7 @@ function smoothPath(pts, tension = 0.28) {
 
 function buildSpark(values, w, h, color, gid) {
   const clean = values.filter((v) => v != null && !Number.isNaN(v));
-  if (clean.length < 2) return `<svg class="sp" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none"><line x1="0" y1="${h/2}" x2="${w}" y2="${h/2}" stroke="rgba(255,255,255,.10)" stroke-width="1.4" stroke-dasharray="3 4" vector-effect="non-scaling-stroke"/></svg>`;
+  if (clean.length < 2) return `<svg class="sp" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none"><line x1="0" y1="${h/2}" x2="${w}" y2="${h/2}" stroke="rgba(128,128,128,.18)" stroke-width="1.4" stroke-dasharray="3 4" vector-effect="non-scaling-stroke"/></svg>`;
   let lo = Math.min(...clean), hi = Math.max(...clean);
   if (hi - lo < 1e-9) { hi += 1; lo -= 1; }
   const n = values.length, pts = [];
@@ -64,6 +64,51 @@ function buildSpark(values, w, h, color, gid) {
   const area = `${line} L${pts[pts.length-1][0].toFixed(1)},${h} L${pts[0][0].toFixed(1)},${h} Z`;
   const X = pts[pts.length-1][0].toFixed(1), Y = pts[pts.length-1][1].toFixed(1);
   return `<svg class="sp" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none"><defs><linearGradient id="${gid}" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="${color}" stop-opacity=".22"/><stop offset="100%" stop-color="${color}" stop-opacity="0"/></linearGradient></defs><path d="${area}" fill="url(#${gid})"/><path d="${line}" fill="none" stroke="${color}" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke"/><line x1="${X}" y1="${Y}" x2="${X}" y2="${Y}" stroke="${color}" stroke-width="4.8" stroke-linecap="round" vector-effect="non-scaling-stroke"/></svg>`;
+}
+
+/**
+ * Graphe double : batterie (aire) + progression (ligne pointillée) sur
+ * la même fenêtre temporelle, échelles indépendantes normalisées. Les
+ * paliers de batterie — la tondeuse en pause ou coincée — sont marqués
+ * d'un segment vertical : c'est le diagnostic visuel « elle s'est
+ * arrêtée 20 min ».
+ */
+function buildDual(valuesA, valuesB, w, h, colA, colB, gid) {
+  const hasA = valuesA.some((v) => v != null && !Number.isNaN(v));
+  const hasB = valuesB && valuesB.some((v) => v != null && !Number.isNaN(v));
+  if (!hasA) return `<svg class="sp" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none"><line x1="0" y1="${h/2}" x2="${w}" y2="${h/2}" stroke="rgba(128,128,128,.18)" stroke-width="1.4" stroke-dasharray="3 4" vector-effect="non-scaling-stroke"/></svg>`;
+  const n = valuesA.length;
+  const proj = (values, lo, hi) => values.map((v, i) =>
+    v == null || Number.isNaN(v) ? null : [(i * w) / (n - 1), h - 3 - ((v - lo) / Math.max(1e-9, hi - lo)) * (h - 6)]);
+  const cleanA = valuesA.filter((v) => v != null && !Number.isNaN(v));
+  let loA = Math.min(...cleanA), hiA = Math.max(...cleanA);
+  if (hiA - loA < 1e-9) { hiA += 1; loA -= 1; }
+  const ptsA = proj(valuesA, loA, hiA);
+  let pathB = "", ptsB = null;
+  if (hasB) {
+    const cleanB = valuesB.filter((v) => v != null && !Number.isNaN(v));
+    let loB = Math.min(...cleanB), hiB = Math.max(...cleanB);
+    if (hiB - loB < 1e-9) { hiB += 1; loB -= 1; }
+    ptsB = proj(valuesB, loB, hiB);
+    pathB = `<path d="${smoothPath(ptsB.filter(Boolean))}" fill="none" stroke="${colB}" stroke-width="1.3" stroke-dasharray="4 3" stroke-linecap="round" stroke-linejoin="round" opacity=".8" vector-effect="non-scaling-stroke"/>`;
+  }
+  const ptsA2 = ptsA.filter(Boolean);
+  const line = smoothPath(ptsA2);
+  const area = `${line} L${ptsA2[ptsA2.length-1][0].toFixed(1)},${h} L${ptsA2[0][0].toFixed(1)},${h} Z`;
+  /* paliers : fenêtre de 6 points où la batterie ne bouge pas de plus
+     de 0,5 % pendant que le temps s'écoule — pause, blocage, charge. */
+  const flats = [];
+  const win = 6;
+  for (let i = 0; i + win < n; i++) {
+    const seg = valuesA.slice(i, i + win).filter((v) => v != null && !Number.isNaN(v));
+    if (seg.length === win && Math.max(...seg) - Math.min(...seg) < 0.5) {
+      const x = ((i + win / 2) * w) / (n - 1);
+      if (!flats.length || x - flats[flats.length-1] > 12) flats.push(x);
+    }
+  }
+  const marks = flats.map((x) => `<line x1="${x.toFixed(1)}" y1="2" x2="${x.toFixed(1)}" y2="${h-2}" stroke="rgba(255,199,107,.4)" stroke-width="1.2" stroke-dasharray="2 3" vector-effect="non-scaling-stroke"/>`).join("");
+  const last = ptsA2[ptsA2.length-1];
+  return `<svg class="sp" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none"><defs><linearGradient id="${gid}" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="${colA}" stop-opacity=".22"/><stop offset="100%" stop-color="${colA}" stop-opacity="0"/></linearGradient></defs>${marks}<path d="${area}" fill="url(#${gid})"/><path d="${line}" fill="none" stroke="${colA}" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke"/>${pathB}<line x1="${last[0].toFixed(1)}" y1="${last[1].toFixed(1)}" x2="${last[0].toFixed(1)}" y2="${last[1].toFixed(1)}" stroke="${colA}" stroke-width="4.8" stroke-linecap="round" vector-effect="non-scaling-stroke"/></svg>`;
 }
 
 
@@ -78,7 +123,7 @@ async function ensureHaForm() {
 }
 
 class MammotionCard extends HTMLElement {
-  constructor() { super(); this.attachShadow({ mode: "open" }); this._built = false; this._els = {}; this._history = null; this._fetchedAt = 0; this._busy = false; this._tick = null; }
+  constructor() { super(); this.attachShadow({ mode: "open" }); this._built = false; this._els = {}; this._history = null; this._fetchedAt = 0; this._busy = false; this._tick = null; this._weekAt = 0; this._week = null; this._weekBusy = false; }
 
   setConfig(config) {
     if (!config) throw new Error("Configuration invalide");
@@ -106,8 +151,13 @@ class MammotionCard extends HTMLElement {
 
   getCardSize() { return 12; }
 
-  set hass(hass) { const first = !this._hass; this._hass = hass; if (!this._built) this._build(); this._update(); if (first) this._fetchHistory(); }
-  connectedCallback() { this._tick = setInterval(() => { this._update(); if (Date.now() - this._fetchedAt > this._config.refresh * 1000) this._fetchHistory(); }, 20000); }
+  set hass(hass) { const first = !this._hass; this._hass = hass; if (!this._built) this._build();
+    /* Thème clair : HA expose darkMode dans hass.themes. La carte
+       s'adapte au lieu d'imposer son fond sombre. */
+    const light = hass?.themes?.darkMode === false;
+    this.classList.toggle("light", light);
+    this._update(); if (first) { this._fetchHistory(); this._fetchWeek(); } }
+  connectedCallback() { this._tick = setInterval(() => { this._update(); if (Date.now() - this._fetchedAt > this._config.refresh * 1000) this._fetchHistory(); if (Date.now() - (this._weekAt || 0) > 3600000) { this._weekAt = Date.now(); this._fetchWeek(); } }, 20000); }
   disconnectedCallback() { if (this._tick) clearInterval(this._tick); this._tick = null; }
 
   _s(id) { return this._st(id)?.state ?? null; }
@@ -121,6 +171,113 @@ class MammotionCard extends HTMLElement {
 
   _mowerState() { const c = this._config; const s = this._st(c.mower) || this._st(c.state_entity); return s ? norm(s.state) : ""; }
 
+  /**
+   * Marge de tonte restante : batterie actuelle ÷ consommation moyenne
+   * en tonte, calculée sur l'historique réel. La moyenne glissante sur
+   * les périodes de forte décharge donne un %/h exploitable — pas une
+   * constante théorique de fiche constructeur. Sans historique
+   * exploitable, aucune estimation : on n'invente pas des heures.
+   */
+  _mowingMargin() {
+    const c = this._config;
+    const batt = this._num(c.battery);
+    if (batt == null) return null;
+    const serie = this._series(c.battery);
+    if (!serie) return null;
+    /* débit = pente sur les fenêtres où la batterie baisse vite */
+    const clean = serie.filter((v) => v != null);
+    if (clean.length < 4) return null;
+    const spanH = Number(c.hours) || 4;
+    const stepH = spanH / (serie.length - 1);
+    let worst = 0; // %/h pendant tonte
+    const win = Math.max(2, Math.round(0.5 / stepH)); // fenêtre 30 min
+    for (let i = 0; i + win < clean.length; i++) {
+      const d = clean[i] - clean[i + win];
+      if (d > 0) worst = Math.max(worst, d / (win * stepH));
+    }
+    if (worst <= 0.5) return null; // pas de décharge visible : pas d'estimation
+    const hours = Math.max(0, batt / worst);
+    return { hours, rate: worst };
+  }
+
+  /**
+   * Sessions des 7 derniers jours : découpe l'historique de l'état du
+   * robot — chaque passage mowing→(autre) est une session. Rend compte
+   * du vrai travail accompli, que ni la batterie ni l'odomètre ne
+   * montrent. Échoue silencieusement sans entité état.
+   */
+  async _fetchWeek() {
+    const c = this._config;
+    const stateEnt = c.mower || c.state_entity;
+    if (!stateEnt || !this._hass || this._weekBusy) return;
+    this._weekBusy = true;
+    try {
+      const end = new Date();
+      const start = new Date(end.getTime() - 7 * 86400 * 1000);
+      const res = await this._hass.callWS({
+        type: "history/history_during_period",
+        start_time: start.toISOString(), end_time: end.toISOString(),
+        minimal_response: true, no_attributes: true,
+        entity_ids: [stateEnt],
+      });
+      const rows = res?.[stateEnt] || [];
+      /* segments de tonte : [début, fin] */
+      const segments = [];
+      let open = null;
+      let lastT = null; let lastV = null;
+      for (const p of rows) {
+        const t = p.lu != null ? p.lu * 1000 : new Date(p.last_updated).getTime();
+        const v = norm(p.s !== undefined ? p.s : p.state);
+        if (lastV != null && MOW_WORDS.some((w) => lastV.includes(w)) && !MOW_WORDS.some((w) => v.includes(w)) && open != null) {
+          segments.push([open, lastT]); open = null;
+        }
+        if (MOW_WORDS.some((w) => v.includes(w)) && open == null) open = t;
+        lastT = t; lastV = v;
+      }
+      if (open != null && lastT) segments.push([open, lastT]);
+      /* agrégat par jour local */
+      const days = [];
+      const today = new Date(); today.setHours(0,0,0,0);
+      for (let i = 6; i >= 0; i--) {
+        const d = new Date(today.getTime() - i * 86400 * 1000);
+        days.push({ date: d, total: 0, sessions: 0 });
+      }
+      for (const [s0, s1] of segments) {
+        const idx = Math.floor((today.getTime() + 86400000 - s0 - 1) / 86400000);
+        if (idx >= 0 && idx < 7 && s1 > s0) {
+          days[6 - idx].total += (s1 - s0) / 60000;
+          days[6 - idx].sessions += 1;
+        }
+      }
+      this._week = days;
+    } catch (err) {
+      console.warn("mammotion-card : historique semaine indisponible", err);
+      this._week = null;
+    } finally {
+      this._weekBusy = false;
+      this._renderWeek();
+    }
+  }
+
+  _renderWeek() {
+    const e = this._els; if (!e.weekSlot || !this._week) return;
+    const days = this._week;
+    const max = Math.max(1, ...days.map((d) => d.total));
+    const NAMES = ["D","L","M","M","J","V","S"];
+    e.weekSlot.innerHTML = `<div class="week">${
+      days.map((d) => {
+        const h = Math.round((d.total / max) * 46);
+        const lbl = d.total > 0 ? this._dur(d.total) : "";
+        return `<div class="wd" title="${d.date.toLocaleDateString("fr")} : ${d.total > 0 ? `${d.sessions} session(s), ${this._dur(d.total)}` : "aucune tonte"}">
+          <span class="wv">${lbl}</span>
+          <div class="wb"><i style="height:${Math.max(3, h)}px"></i></div>
+          <span class="wn">${NAMES[d.date.getDay()]}</span>
+        </div>`;
+      }).join("")
+    }</div>`;
+    const total = days.reduce((a, d) => a + d.total, 0);
+    if (e.weekMeta) e.weekMeta.textContent = `${this._dur(total)} sur 7 j`;
+  }
   /**
    * Rend un réglage interactif : number -> slider, select -> menu,
    * sinon simple lecture. Le domaine de l'entité décide — un sensor
@@ -215,11 +372,20 @@ class MammotionCard extends HTMLElement {
   }
   /* Erreur affichable : texte nettoyé (Mammotion préfixe « common: ») et
      daté si l'heure est publiée — « il y a 2 j » est plus utile qu'un
-     horodatage brut. */
+     horodatage brut. « Error message not found » est la chaîne que
+     Mammotion publie quand sa table ne connaît pas le code : ce n'est
+     pas un message, on affiche le code à la place. */
   _errorText() {
     const c = this._config;
     let txt = this._txt(c.error, null);
-    if (txt) txt = String(txt).replace(/^common:\s*/i, "").replace(/_/g, " ").trim();
+    if (txt) {
+      txt = String(txt).replace(/^common:\s*/i, "").replace(/_/g, " ").trim();
+      if (/^error message not found\.?$/i.test(txt)) txt = null;
+    }
+    const code = this._txt(c.error_code, null);
+    if (!txt && code && !["0","none","no_error",""].includes(norm(code))) {
+      txt = `Code ${code}`;
+    }
     const t = this._st(c.error_time)?.state;
     let when = "";
     if (t && !isDead(t)) {
@@ -237,10 +403,14 @@ class MammotionCard extends HTMLElement {
   _remainingMinutes() { const c = this._config; const s = this._st(c.remaining_time); if (!s || isDead(s.state)) return null; const raw = s.state; if (/\d{4}-\d{2}-\d{2}T/.test(raw)) { const d = (new Date(raw).getTime() - Date.now()) / 60000; return d > 0 ? d : 0; } const v = Number(raw); if (Number.isNaN(v)) return null; return v; }
 
   async _fetchHistory() {
-    const c = this._config; if (!c.battery || !c.show_battery_chart || this._busy || !this._hass) return;
+    const c = this._config;
+    const ents = [];
+    if (c.battery && c.show_battery_chart) ents.push(c.battery);
+    if (c.progress) ents.push(c.progress);
+    if (!ents.length || this._busy || !this._hass) return;
     this._busy = true;
     try { const end = new Date(); const start = new Date(end.getTime() - c.hours * 3600 * 1000);
-      const res = await this._hass.callWS({ type: "history/history_during_period", start_time: start.toISOString(), end_time: end.toISOString(), minimal_response: true, no_attributes: true, entity_ids: [c.battery] });
+      const res = await this._hass.callWS({ type: "history/history_during_period", start_time: start.toISOString(), end_time: end.toISOString(), minimal_response: true, no_attributes: true, entity_ids: ents });
       this._history = { data: res || {}, start: start.getTime(), end: end.getTime() };
     } catch (err) { console.warn("mammotion-card : historique indisponible", err); this._history = { data: {}, start: 0, end: 0 };
     } finally { this._busy = false; this._fetchedAt = Date.now(); this._renderChart(); }
@@ -295,6 +465,7 @@ class MammotionCard extends HTMLElement {
     e.ringProg = $(".dr .rp"); e.ringBatt = $(".dr .rb"); e.big = $(".mw"); e.bigSub = $(".msb"); e.legend = $(".mlg");
     e.segw = $(".segw"); e.phases = $(".phw"); e.pbSlot = $(".phw .slot"); e.phRow = $(".phr");
     e.chartMeta = $(".chartw .est"); e.chartSlot = $(".chartw .slot");
+    e.weekSlot = $(".wslot"); e.weekMeta = $(".weekw .west");
     e.zones = $(".zrs"); e.zonesMeta = $(".zonesw .est"); e.cells = $(".bg4");
     e.footLeft = $(".sf .left"); e.footRight = $(".sf .right");
     e.camSlot = $(".cam-slot"); e.extraBtns = $(".extra-btns"); e.actBtns = $(".activity-btns");
@@ -331,9 +502,13 @@ class MammotionCard extends HTMLElement {
       <div class="activity-btns hidden"></div>
       <div class="extra-btns hidden"></div>
       ${c.show_phases ? `<div class="phw"><div class="slot"></div><div class="phr"></div></div>` : ""}
-      <div class="cam-slot"></div>
+      <details class="acc acc-cam">
+        <summary class="accs"><span class="k">Caméra</span><svg class="car" viewBox="0 0 24 24"><path d="M7 10l5 5 5-5z"/></svg></summary>
+        <div class="accb"><div class="cam-slot"></div></div>
+      </details>
       <div class="bg4"></div>
-      ${c.battery && c.show_battery_chart ? `<div class="chartw"><div class="lbl"><span class="k">Batterie · ${Number(c.hours)||4} h</span><span class="est"></span></div><div class="slot"></div></div>` : ""}
+      ${c.battery && c.show_battery_chart ? `<div class="chartw"><div class="lbl"><span class="k">Batterie · ${Number(c.hours)||4} h</span><span class="est"></span></div><div class="slot"></div><div class="dlegend"><span><i style="border-color:${COL.progress}"></i>batterie</span><span><i></i>progression</span><span class="fl">palier = pause</span></div></div>` : ""}
+      ${c.mower || c.state_entity ? `<div class="weekw"><div class="lbl"><span class="k">Tonte · 7 jours</span><span class="west"></span></div><div class="wslot"></div></div>` : ""}
       ${c.zones.length ? `<div class="zonesw"><div class="lbl"><span class="k">Zones</span><span class="est"></span></div><div class="zrs"></div></div>` : ""}
 
       <details class="acc acc-mow">
@@ -385,9 +560,20 @@ class MammotionCard extends HTMLElement {
 
   _renderChart() {
     const c = this._config, e = this._els; if (!e.chartSlot) return;
-    const serie = this._series(c.battery);
-    e.chartSlot.innerHTML = buildSpark(serie || [], 342, 40, COL.progress, "gB");
-    if (serie && e.chartMeta) { const clean = serie.filter((v) => v != null); const delta = clean[clean.length-1] - clean[0]; e.chartMeta.textContent = `${delta >= 0 ? "+" : "−"}${this._fmt(Math.abs(delta), 0)} % sur ${c.hours} h`; }
+    const serieBatt = this._series(c.battery);
+    const serieProg = c.progress ? this._series(c.progress) : null;
+    e.chartSlot.innerHTML = buildDual(serieBatt || [], serieProg, 342, 46, COL.progress, COL.battery, "gB");
+    /* Légende enrichie : décharge brute + marge de tonte estimée.
+       La marge répond à « combien de temps lui reste-t-il », la décharge
+       à « comment elle tient ». */
+    if (serieBatt && e.chartMeta) {
+      const clean = serieBatt.filter((v) => v != null);
+      const delta = clean[clean.length-1] - clean[0];
+      const bits = [`${delta >= 0 ? "+" : "−"}${this._fmt(Math.abs(delta), 0)} % sur ${c.hours} h`];
+      const m = this._mowingMargin();
+      if (m) bits.push(`marge ~${this._dur(m.hours * 60)}`);
+      e.chartMeta.textContent = bits.join(" · ");
+    }
   }
 
   _renderZones() {
@@ -413,7 +599,11 @@ class MammotionCard extends HTMLElement {
     e.name.textContent = c.name; e.state.textContent = labels[mode];
     const chips = []; const rtk = this._txt(c.rtk_status, null); if (rtk) chips.push(rtk);
     const sat = this._num(c.satellites); if (sat != null) chips.push(`${Math.round(sat)} sat`);
-    e.chips.innerHTML = chips.map((t) => `<span class="lk">${esc(t)}</span>`).join("");
+    /* Pluie : si le capteur configuré tombe, la tonte s'arrêtera — autant
+       le dire avant qu'elle le décide toute seule. */
+    const rain = this._num(c.rain_sensor);
+    if (rain != null && rain > 0.1) chips.push(`pluie ${this._fmt(rain, 1)} mm`);
+    e.chips.innerHTML = chips.map((t) => `<span class="lk${String(t).startsWith("pluie") ? " rain" : ""}">${esc(t)}</span>`).join("");
     const C1 = 2 * Math.PI * 82, C2 = 2 * Math.PI * 66;
     e.ringProg.setAttribute("stroke-dasharray", `${(C1 * (progress ?? 0)).toFixed(1)} ${C1.toFixed(1)}`);
     e.ringBatt.setAttribute("stroke-dasharray", `${(C2 * ((batt ?? 0) / 100)).toFixed(1)} ${C2.toFixed(1)}`);
@@ -433,8 +623,14 @@ class MammotionCard extends HTMLElement {
     if (sr != null && sr > 0) sub.push(`session ${Math.round(sr * 100)} %`);
     const area = this._num(c.area); if (area != null) sub.push(`${this._fmt(area, 0)} m²`);
     e.bigSub.textContent = sub.join(" · ") || "";
+    /* Légende des anneaux : chaque anneau a son libellé explicite —
+       « 77 % tonte » au centre sans qualificatif prêtait à confusion
+       avec la batterie. */
     const finish = rem != null && rem > 0 ? new Date(Date.now() + rem * 60000) : null;
-    e.legend.innerHTML = `<span><i style="background:${COL.progress}"></i>Progression</span><span><i style="background:${COL.battery}"></i>Batterie ${batt != null ? `${Math.round(batt)} %` : "—"}</span><span class="mr">${finish ? `fin ${this._hhmm(finish)}` : ""}</span>`;
+    const battEnd = mode === "mowing" && batt != null && this._mowingMargin()
+      ? Math.max(0, Math.round(batt - this._mowingMargin().rate * ((rem ?? 0) / 60)))
+      : null;
+    e.legend.innerHTML = `<span><i style="background:${COL.progress}"></i>Tonte ${progress != null ? `${Math.round(progress * 100)} %` : "—"}</span><span><i style="background:${COL.battery}"></i>Batterie ${batt != null ? `${Math.round(batt)} %` : "—"}${battEnd != null ? ` → ${battEnd} % fin` : ""}</span><span class="mr">${finish ? `fin ${this._hhmm(finish)}` : ""}</span>`;
     const activeSeg = mode === "mowing" ? 0 : mode === "paused" ? 1 : 2;
     /* Avec 4 segments (Annuler ajouté), la largeur de la pastille suit. */
     const segCount = this._els.segw ? this._els.segw.querySelectorAll(".sgi").length : 3;
@@ -463,7 +659,12 @@ class MammotionCard extends HTMLElement {
       e.errBanner.classList.toggle("hidden", !hasErr);
       if (hasErr) e.errTxt.textContent = this._errorText() || errCode || "Erreur active";
     }
-    e.footLeft.innerHTML = `<i class="${hasErr ? "warn" : ""}"></i>${hasErr ? esc(this._errorText() || errCode || "Erreur active") : "Aucune erreur"}`;
+    /* Pas d'erreur active : rien à afficher. « Aucune erreur » est
+       l'état normal d'une tondeuse — l'écrire est du bruit, pas une
+       information. Le pied gauche reste vide et l'espace respire. */
+    e.footLeft.innerHTML = hasErr
+      ? `<i class="warn"></i>${esc(this._errorText() || errCode || "Erreur active")}`
+      : "";
     const wear = this._num(c.blade_wear), km = this._num(c.odometer);
     /* Lame : les heures d'utilisation sont plus parlantes qu'un pourcentage
        de Mammotion. 60 h est la durée de vie constructeur typique. */
@@ -631,10 +832,17 @@ class MammotionCard extends HTMLElement {
 }
 
 MammotionCard.styles = `
-:host{--mm-bg:#12151c;--mm-green:#c9f0a8;--mm-blue:#7fb3ff;--mm-warn:#ffc76b;--mm-alert:#ff6b5c;display:block;}
+/* Thème : suit HA quand il est clair, reste sombre sinon. Les rgba
+   blancs deviennent des variables pour ne pas casser en clair. */
+:host{--mm-bg:#12151c;--mm-green:#c9f0a8;--mm-blue:#7fb3ff;--mm-warn:#ffc76b;--mm-alert:#ff6b5c;
+  --mm-txt:#eef1f6;--mm-dim:rgba(255,255,255,.5);--mm-faint:rgba(255,255,255,.3);
+  --mm-panel:rgba(255,255,255,.04);--mm-border:rgba(255,255,255,.07);display:block;}
+:host(.light){--mm-bg:var(--card-background-color,#fff);--mm-txt:#1c1f26;--mm-dim:rgba(20,24,32,.55);
+  --mm-faint:rgba(20,24,32,.38);--mm-panel:rgba(20,24,32,.045);--mm-border:rgba(20,24,32,.10);
+  --mm-green:#3e7d1f;--mm-blue:#2f6bd8;--mm-warn:#b07818;--mm-alert:#c0392b;}
 *{box-sizing:border-box;}
-ha-card{border-radius:var(--ha-card-border-radius,26px);padding:20px 18px 16px;position:relative;overflow:hidden;border:1px solid rgba(255,255,255,.07);background:var(--mm-bg);color:#eef1f6;font-family:var(--primary-font-family,"Inter","Segoe UI",Roboto,sans-serif);transition:border-color .35s;}
-ha-card::after{content:"";position:absolute;left:20px;right:20px;top:0;height:1px;background:linear-gradient(90deg,transparent,rgba(255,255,255,.14),transparent);}
+ha-card{border-radius:var(--ha-card-border-radius,26px);padding:20px 18px 16px;position:relative;overflow:hidden;border:1px solid var(--mm-border);background:var(--mm-bg);color:var(--mm-txt);font-family:var(--primary-font-family,"Inter","Segoe UI",Roboto,sans-serif);transition:border-color .35s;}
+ha-card::after{content:"";position:absolute;left:20px;right:20px;top:0;height:1px;background:linear-gradient(90deg,transparent,var(--mm-border),transparent);}
 .glow{position:absolute;inset:0;pointer-events:none;transition:.5s;background:radial-gradient(85% 50% at 50% 6%,rgba(201,240,168,.14),transparent 62%);}
 .m-docked .glow,.m-returning .glow{background:radial-gradient(85% 50% at 50% 6%,rgba(127,179,255,.13),transparent 62%);}
 .m-paused .glow{background:radial-gradient(85% 50% at 50% 6%,rgba(255,199,107,.13),transparent 62%);}
@@ -650,12 +858,13 @@ ha-card::after{content:"";position:absolute;left:20px;right:20px;top:0;height:1p
 .errw.hidden{display:none;}
 .errw svg{width:16px;height:16px;fill:#ff8a7a;flex-shrink:0;}
 .errw span{min-width:0;}
-.ms{display:flex;align-items:center;gap:7px;font-size:11.5px;color:rgba(255,255,255,.55);min-width:0;}
+.ms{display:flex;align-items:center;gap:7px;font-size:11.5px;color:var(--mm-dim);min-width:0;}
 .ms .nm{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
-.ms b{color:#eef1f6;font-weight:600;white-space:nowrap;}
+.ms b{color:var(--mm-txt);font-weight:600;white-space:nowrap;}
 .md{width:6px;height:6px;border-radius:50%;flex-shrink:0;}
 .mk{display:flex;gap:5px;flex-shrink:0;}
-.lk{font-size:8.5px;font-weight:600;letter-spacing:.7px;color:rgba(255,255,255,.5);background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.09);border-radius:6px;padding:3px 6px;white-space:nowrap;}
+.lk{font-size:8.5px;font-weight:600;letter-spacing:.7px;color:var(--mm-dim);background:var(--mm-panel);border:1px solid var(--mm-border);border-radius:6px;padding:3px 6px;white-space:nowrap;}
+.lk.rain{background:rgba(127,179,255,.12);border-color:rgba(127,179,255,.35);color:#a8c9f0;}
 .mstage{position:relative;width:180px;margin:20px auto 0;z-index:1;cursor:pointer;}
 .dr{display:block;width:180px;height:180px;}
 .dr circle{transition:stroke-dasharray .6s ease,stroke .3s;}
@@ -665,16 +874,16 @@ ha-card::after{content:"";position:absolute;left:20px;right:20px;top:0;height:1p
 .m-paused .mi{fill:var(--mm-warn);}
 .m-error .mi{fill:var(--mm-alert);}
 .mw{font-size:38px;font-weight:200;letter-spacing:-2px;line-height:1;font-variant-numeric:tabular-nums;}
-.mw span{font-size:15px;font-weight:300;color:rgba(255,255,255,.4);margin:0 2px;letter-spacing:0;}
-.msb{font-size:10px;color:rgba(255,255,255,.38);font-variant-numeric:tabular-nums;}
-.mlg{display:flex;align-items:center;gap:12px;font-size:9px;color:rgba(255,255,255,.36);margin-top:12px;position:relative;z-index:1;}
+.mw span{font-size:15px;font-weight:300;color:var(--mm-faint);margin:0 2px;letter-spacing:0;}
+.msb{font-size:10px;color:var(--mm-faint);font-variant-numeric:tabular-nums;}
+.mlg{display:flex;align-items:center;gap:12px;font-size:9px;color:var(--mm-faint);margin-top:12px;position:relative;z-index:1;}
 .mlg i{width:7px;height:7px;border-radius:50%;display:inline-block;margin-right:5px;}
 .mlg .mr{margin-left:auto;font-variant-numeric:tabular-nums;}
-.segw{position:relative;display:flex;margin-top:16px;padding:4px;border-radius:16px;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.08);z-index:1;}
-.pill{position:absolute;top:4px;bottom:4px;left:4px;width:calc((100% - 8px)/4);border-radius:13px;background:rgba(255,255,255,.13);box-shadow:inset 0 0 0 1px rgba(255,255,255,.16),0 4px 14px rgba(0,0,0,.3);transition:left .32s cubic-bezier(.4,1.3,.5,1),width .32s;}
+.segw{position:relative;display:flex;margin-top:16px;padding:4px;border-radius:16px;background:var(--mm-panel);border:1px solid var(--mm-border);z-index:1;}
+.pill{position:absolute;top:4px;bottom:4px;left:4px;width:calc((100% - 8px)/4);border-radius:13px;background:var(--mm-panel);box-shadow:inset 0 0 0 1px var(--mm-border),0 4px 14px rgba(0,0,0,.18);transition:left .32s cubic-bezier(.4,1.3,.5,1),width .32s;}
 .sgi{position:relative;flex:1;text-align:center;padding:11px 0;cursor:pointer;}
-.sgi span{font-size:11px;font-weight:600;color:rgba(255,255,255,.45);}
-.sgi.on span{color:#eef1f6;}
+.sgi span{font-size:11px;font-weight:600;color:var(--mm-faint);}
+.sgi.on span{color:var(--mm-txt);}
 /* Annuler : discret par défaut — stopper une tâche est un geste
    délibéré, pas une action à confondre avec Tondre. */
 .sgi-cancel span{color:rgba(255,138,122,.55);}
@@ -682,31 +891,43 @@ ha-card::after{content:"";position:absolute;left:20px;right:20px;top:0;height:1p
 .phw{margin-top:18px;position:relative;z-index:1;}
 .pb{display:block;width:100%;height:8px;}
 .phr{display:flex;justify-content:space-between;margin-top:7px;}
-.ph{font-size:8.5px;letter-spacing:.4px;text-transform:uppercase;font-weight:600;color:rgba(255,255,255,.24);}
+.ph{font-size:8.5px;letter-spacing:.4px;text-transform:uppercase;font-weight:600;color:var(--mm-faint);}
 .ph.done{color:rgba(255,255,255,.44);}
-.ph.on{color:#eef1f6;}
-.k{font-size:9px;letter-spacing:2px;text-transform:uppercase;color:rgba(255,255,255,.42);font-weight:600;}
-.est{font-size:9.5px;color:rgba(255,255,255,.34);font-variant-numeric:tabular-nums;}
+.ph.on{color:var(--mm-txt);}
+.k{font-size:9px;letter-spacing:2px;text-transform:uppercase;color:var(--mm-faint);font-weight:600;}
+.est{font-size:9.5px;color:var(--mm-faint);font-variant-numeric:tabular-nums;}
 .lbl{display:flex;align-items:baseline;justify-content:space-between;gap:8px;margin-bottom:9px;}
 .chartw{margin-top:18px;position:relative;z-index:1;}
-.sp{display:block;width:100%;height:40px;}
+/* Historique 7 jours : barres de tonte par jour */
+.weekw{margin-top:18px;position:relative;z-index:1;}
+.week{display:flex;align-items:flex-end;gap:6px;height:70px;}
+.wd{flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;min-width:0;}
+.wv{font-size:8px;color:var(--mm-faint);font-variant-numeric:tabular-nums;white-space:nowrap;}
+.wb{width:100%;max-width:34px;height:50px;display:flex;align-items:flex-end;background:var(--mm-panel);border-radius:5px;overflow:hidden;}
+.wb i{display:block;width:100%;background:var(--mm-green);opacity:.75;border-radius:5px;}
+.wn{font-size:8.5px;color:var(--mm-faint);font-weight:600;}
+.sp{display:block;width:100%;height:46px;}
+/* Légende du graphe : paliers = pauses/blocages, ligne pointillée = progression */
+.chartw .dlegend{display:flex;gap:12px;margin-top:6px;font-size:8.5px;color:var(--mm-faint);}
+.chartw .dlegend i{width:10px;height:0;border-top:2px dashed var(--mm-blue);display:inline-block;margin-right:4px;vertical-align:middle;}
+.chartw .dlegend .fl{border-top:2px dashed rgba(255,199,107,.7);margin-left:auto;}
 .zonesw{margin-top:18px;position:relative;z-index:1;}
 .zrs{display:flex;flex-direction:column;gap:1px;}
 .zr{display:flex;align-items:center;gap:9px;padding:6px 0;cursor:pointer;}
-.zn{font-size:11px;color:rgba(255,255,255,.55);width:106px;flex-shrink:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
-.zb{flex:1;height:4px;border-radius:2px;background:rgba(255,255,255,.08);overflow:hidden;}
+.zn{font-size:11px;color:var(--mm-dim);width:106px;flex-shrink:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.zb{flex:1;height:4px;border-radius:2px;background:var(--mm-panel);overflow:hidden;}
 .zb i{display:block;height:100%;border-radius:2px;background:var(--mm-green);opacity:.75;transition:width .4s;}
 .zp{font-size:10.5px;font-weight:600;width:34px;text-align:right;color:rgba(255,255,255,.62);font-variant-numeric:tabular-nums;}
 .zp.done{color:var(--mm-green);}
-.zs{font-size:9.5px;width:46px;text-align:right;color:rgba(255,255,255,.3);font-variant-numeric:tabular-nums;}
+.zs{font-size:9.5px;width:46px;text-align:right;color:var(--mm-faint);font-variant-numeric:tabular-nums;}
 .bg4{display:grid;grid-template-columns:repeat(auto-fit,minmax(70px,1fr));gap:6px;margin-top:18px;position:relative;z-index:1;}
-.bc4{background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.075);border-radius:12px;padding:9px 5px;text-align:center;}
-.bc4 span{display:block;font-size:7.5px;letter-spacing:.8px;text-transform:uppercase;color:rgba(255,255,255,.38);font-weight:600;}
+.bc4{background:var(--mm-panel);border:1px solid var(--mm-border);border-radius:12px;padding:9px 5px;text-align:center;}
+.bc4 span{display:block;font-size:7.5px;letter-spacing:.8px;text-transform:uppercase;color:var(--mm-faint);font-weight:600;}
 .bc4 b{display:block;font-size:12.5px;font-weight:600;margin-top:5px;font-variant-numeric:tabular-nums;}
 .camw{margin-top:14px;position:relative;z-index:1;}
-.cam-slot{border-radius:14px;overflow:hidden;border:1px solid rgba(255,255,255,.07);
+.cam-slot{border-radius:14px;overflow:hidden;border:1px solid var(--mm-border);
   --ha-card-background:transparent;--ha-card-border-width:0;--ha-card-box-shadow:none;--ha-card-border-radius:0;}
-.cam-slot:empty{display:none;}
+.acc-cam .accb{padding:2px 0 10px;}
 .cam-slot > *{display:block;width:100%;}
 .cam-slot img{display:block;width:100%;border-radius:12px;}
 
@@ -715,7 +936,7 @@ ha-card::after{content:"";position:absolute;left:20px;right:20px;top:0;height:1p
 .activity-btns{display:flex;gap:7px;margin-top:8px;position:relative;z-index:1;}
 .activity-btns.hidden{display:none;}
 .eb{flex:1;text-align:center;font-size:11px;font-weight:600;padding:10px 0;border-radius:12px;
-  background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.10);color:rgba(255,255,255,.72);cursor:pointer;transition:.15s;}
+  background:var(--mm-panel);border:1px solid var(--mm-border);color:rgba(255,255,255,.72);cursor:pointer;transition:.15s;}
 .eb:hover{background:rgba(255,255,255,.1);}
 .eb.ghost{background:rgba(255,107,92,.10);border-color:rgba(255,107,92,.28);color:#ffb3aa;}
 .activity-btns .eb{background:rgba(201,240,168,.08);border-color:rgba(201,240,168,.22);color:var(--mm-green);}
@@ -723,9 +944,9 @@ ha-card::after{content:"";position:absolute;left:20px;right:20px;top:0;height:1p
 
 
 /* Sections repliables */
-.acc{border-radius:14px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.07);
+.acc{border-radius:14px;background:var(--mm-panel);border:1px solid var(--mm-border);
   padding:0 13px;margin-top:14px;position:relative;z-index:1;transition:.2s;}
-.acc[open]{background:rgba(255,255,255,.06);border-color:rgba(255,255,255,.11);}
+.acc[open]{background:var(--mm-panel);border-color:rgba(255,255,255,.11);}
 .acc.hidden{display:none;}
 .accs{display:flex;align-items:center;justify-content:space-between;gap:8px;
   padding:12px 0;cursor:pointer;list-style:none;}
@@ -736,44 +957,49 @@ ha-card::after{content:"";position:absolute;left:20px;right:20px;top:0;height:1p
 .accb:empty{padding:0;}
 
 .gc{display:inline-flex;flex-direction:column;gap:2px;padding:7px 10px;border-radius:9px;
-  background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.05);margin:3px;min-width:90px;}
-.gc span{font-size:8px;letter-spacing:.6px;text-transform:uppercase;color:rgba(255,255,255,.36);font-weight:600;}
+  background:var(--mm-panel);border:1px solid var(--mm-border);margin:3px;min-width:90px;}
+.gc span{font-size:8px;letter-spacing:.6px;text-transform:uppercase;color:var(--mm-faint);font-weight:600;}
 .gc b{font-size:11px;font-weight:600;font-variant-numeric:tabular-nums;}
 
 /* Réglages interactifs : sliders et menus, pleine largeur */
 #mow-grid{display:flex;flex-direction:column;gap:2px;}
 .ctl{display:flex;align-items:center;gap:10px;padding:8px 0;}
-.ctl+.ctl{border-top:1px solid rgba(255,255,255,.03);}
-.ctl-n{font-size:11px;color:rgba(255,255,255,.55);width:118px;flex-shrink:0;}
-.ctl-v{font-size:11px;font-weight:600;font-variant-numeric:tabular-nums;color:#eef1f6;width:52px;text-align:right;flex-shrink:0;}
+.ctl+.ctl{border-top:1px solid var(--mm-border);}
+.ctl-n{font-size:11px;color:var(--mm-dim);width:118px;flex-shrink:0;}
+.ctl-v{font-size:11px;font-weight:600;font-variant-numeric:tabular-nums;color:var(--mm-txt);width:52px;text-align:right;flex-shrink:0;}
 .ctl-slider{flex:1;appearance:none;-webkit-appearance:none;height:4px;border-radius:2px;
-  background:rgba(255,255,255,.12);outline:none;cursor:pointer;margin:0;}
+  background:var(--mm-panel);outline:none;cursor:pointer;margin:0;}
 .ctl-slider::-webkit-slider-thumb{appearance:none;-webkit-appearance:none;width:16px;height:16px;border-radius:50%;
   background:var(--mm-green);border:2px solid #12151c;box-shadow:0 1px 5px rgba(0,0,0,.4);cursor:pointer;}
 .ctl-slider::-moz-range-thumb{width:14px;height:14px;border-radius:50%;
   background:var(--mm-green);border:2px solid #12151c;cursor:pointer;}
-.ctl-sel{flex:1;font-family:inherit;font-size:11px;font-weight:600;color:#eef1f6;
-  background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.16);border-radius:9px;
+.ctl-sel{flex:1;font-family:inherit;font-size:11px;font-weight:600;color:var(--mm-txt);
+  background:var(--mm-panel);border:1px solid rgba(255,255,255,.16);border-radius:9px;
   padding:6px 10px;cursor:pointer;appearance:none;-webkit-appearance:none;
   background-image:url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%23ffffff88'%3E%3Cpath d='M7 10l5 5 5-5z'/%3E%3C/svg%3E");
   background-repeat:no-repeat;background-position:right 8px center;background-size:14px;}
 .ctl-sel:hover{background-color:rgba(255,255,255,.1);}
 .ctl-sel:focus{outline:none;border-color:var(--mm-green);}
-.ctl-sel option{background:#1a1d24;color:#eef1f6;}
+.ctl-sel option{background:#1a1d24;color:var(--mm-txt);}
 
 #conn-grid{display:flex;flex-wrap:wrap;gap:3px;}
 
 .sw-row{display:flex;align-items:center;justify-content:space-between;gap:10px;
   padding:8px 0;cursor:pointer;}
-.sw-row+.sw-row{border-top:1px solid rgba(255,255,255,.03);}
-.sw-n{font-size:11px;color:rgba(255,255,255,.55);}
+.sw-row+.sw-row{border-top:1px solid var(--mm-border);}
+.sw-n{font-size:11px;color:var(--mm-dim);}
 .sw-t{width:32px;height:18px;border-radius:10px;background:rgba(255,255,255,.1);position:relative;transition:.15s;}
 .sw-t::after{content:"";position:absolute;top:2px;left:2px;width:14px;height:14px;border-radius:50%;
   background:rgba(255,255,255,.4);transition:.15s;}
 .sw-t.on{background:rgba(201,240,168,.3);}
 .sw-t.on::after{left:16px;background:var(--mm-green);}
 
-.sf{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:15px;padding-top:12px;border-top:1px solid rgba(255,255,255,.07);font-size:10px;color:rgba(255,255,255,.4);position:relative;z-index:1;}
+/* Micro-interaction tactile : tout élément actionnable confirme le
+   toucher — un bouton sans retour visuel semble mort. */
+.sgi,.eb,.zr,.sw-row,.accs,.errw,.ctl-sel{transition:transform .12s,background .15s;}
+.sgi:active,.eb:active,.zr:active,.sw-row:active,.accs:active,.errw:active,.ctl-sel:active{transform:scale(.97);}
+
+.sf{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:15px;padding-top:12px;border-top:1px solid var(--mm-border);font-size:10px;color:var(--mm-faint);position:relative;z-index:1;}
 .sf .left{display:flex;align-items:center;gap:6px;min-width:0;}
 .sf .left i{width:5px;height:5px;border-radius:50%;background:var(--mm-green);flex-shrink:0;}
 .sf .left i.warn{background:var(--mm-alert);}
@@ -790,7 +1016,7 @@ const FLAT_KEYS = [
   "elapsed_time","total_time","area","current_zone","charging","blade_height","blade_height_set","satellites","rtk_status","error","error_code","error_time",
   "odometer","blade_wear","blade_hours","blade_warn_hours","start_button","pause_button","dock_button","cancel_button",
   "camera","restart_button","edge_button","leave_dock_button","battery_cycles","total_work_time",
-  "sync_map_button","sync_schedule_button","sync_rtk_button","idle_hours",
+  "sync_map_button","sync_schedule_button","sync_rtk_button","idle_hours","rain_sensor",
   "speed","spacing","angle","angle_traverse","turn_mode","perimeter_rounds","forbidden_rounds","charge_path",
   "trajectory_mode","mowing_order","obstacle_detection",
   "wildlife_safety","rain_detection_mowing","rain_detection_during",
@@ -829,6 +1055,7 @@ const LABELS = {
   sync_schedule_button: "Bouton Synchroniser les plannings",
   sync_rtk_button: "Bouton Synchroniser RTK et base",
   idle_hours: "Heures non travaillées (texte)",
+  rain_sensor: "Capteur pluie (mm/h, badge)",
   speed: "Vitesse de tonte", spacing: "Espacement des trajectoires",
   angle: "Angle de trajectoire", trajectory_mode: "Mode de trajectoire",
   mowing_order: "Ordre de tonte", obstacle_detection: "Détection d'obstacles",
@@ -893,6 +1120,7 @@ const SCHEMA = [
       { name: "charging", selector: { entity: { filter: [{ domain: "binary_sensor" }] } } },
       { name: "satellites", selector: { entity: { filter: [{ domain: "sensor" }] } } },
       { name: "rtk_status", selector: { entity: { filter: [{ domain: "sensor" }] } } },
+      { name: "rain_sensor", selector: { entity: { filter: [{ domain: "sensor", device_class: "precipitation" }] } } },
     ],
   },
   {

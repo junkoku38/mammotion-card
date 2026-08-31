@@ -122,6 +122,31 @@ light_level: sensor.jardin_luba_vszztydu_luminosite_de_la_camera
 task_path: sensor.jardin_luba_vszztydu_zone_de_tache_path
 ```
 
+## Nouveautés v2.1.0 — design et information
+
+- **Caméra repliable** : fermée par défaut — un flux souvent mort ne
+  doit pas manger 40 % de la carte. Ouvrez-la quand vous voulez voir.
+- **Marge de tonte** : batterie ÷ décharge moyenne réelle (calculée
+  sur l'historique) → « marge ~3 h 24 ». Pas d'invention sans données.
+- **Historique 7 jours** : barres de tonte par jour (durée + sessions),
+  total de la semaine — le vrai travail accompli.
+- **Double courbe** : batterie (aire) + progression (pointillée) sur
+  le même graphe, échelles indépendantes. Les **paliers de batterie**
+  sont marqués en jaune : pauses, blocages, charges.
+- **Batterie en fin de session** : « Batterie 87 % → 63 % fin » quand
+  le temps restant et la décharge sont connus.
+- **Badge pluie** : si un capteur de précipitation est configuré
+  (`rain_sensor`), la carte prévient avant que la tondeuse ne le
+  décide elle-même.
+- **Labels d'anneaux distincts** : « Tonte 77 % » / « Batterie 87 % » —
+  le centre sans qualificatif prêtait à confusion.
+- **Thème clair** : la carte suit le thème HA (`darkMode`), au lieu
+  d'imposer son fond sombre.
+- **Erreurs silencieuses** : plus de « Aucune erreur » affiché en
+  temps normal, et « Error message not found » (chaîne Mammotion pour
+  un code inconnu) est remplacé par « Code 6404 ».
+- **Micro-interactions** : scale au toucher sur tout élément actionnable.
+
 ## Licence
 
 MIT
