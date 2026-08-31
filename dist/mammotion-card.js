@@ -9,8 +9,6 @@
 
 const CARD_VERSION = "3.0.0";
 
-const THEMES_LIST = Object.entries(THEMES).map(([value, t]) => ({ value, label: t.name }));
-
 console.info(
   `%c MAMMOTION-CARD %c v${CARD_VERSION} `,
   "color:#101610;background:#c9f0a8;font-weight:700;border-radius:3px 0 0 3px;padding:2px 6px",
@@ -110,6 +108,8 @@ const THEMES = {
 };
 
 const DEFAULT_THEME = "glass";
+
+const THEMES_LIST = Object.entries(THEMES).map(([value, t]) => ({ value, label: t.name }));
 
 const fireEvent = (node, type, detail = {}) => {
   const ev = new Event(type, { bubbles: true, cancelable: false, composed: true });
