@@ -72,6 +72,56 @@ show_phases: true
   non travaillées** dans la section connexion.
 - `state_entity` configurable depuis l'éditeur visuel.
 
+## Nouveautés v2.0.0 — réglages réglables et couverture complète
+
+**Réglages interactifs** : les `number` deviennent des sliders et les
+`select` des menus — `speed` et `blade_height_set` pointent désormais les
+entités *réglables* (`number.*`), pas les sensors en lecture seule. Un
+`number.set_value` écrit une vraie commande à la tondeuse : l'écriture
+part au relâchement du slider, pas à chaque pixel.
+
+Nouvelles clés réglables : `blade_height_set`, `angle_traverse`,
+`turn_mode`, `perimeter_rounds`, `forbidden_rounds`, `charge_path`,
+`voice_gender`, `voice_volume`.
+
+**Action Annuler** : 4ᵉ segment `cancel_button` — stopper une tâche est
+plus fréquent que la lancer.
+
+**Diagnostics RTK** : `rtk_mode`, `rtk_quality`, `rtk_age`,
+`device_signal`, `visual_pos`, `map_sync`, `connection`, `mqtt`,
+`location`, `light_level`, `task_path` — tout ce qui répond à « pourquoi
+elle tond mal / dérive ».
+
+**Divers** : `blade_warn_hours` (seuil d'usure lame, défaut 60 h).
+
+Volontairement ignorés : mouvement d'urgence (danger), déplacer la
+station (risqué), `switch.zone` (redondant avec les boutons d'activité).
+
+```yaml
+# réglages réglables — pointer les number/select, pas les sensors
+speed: number.jardin_luba_vszztydu_vitesse_de_fonctionnement
+blade_height_set: number.jardin_luba_vszztydu_hauteur_des_lames
+angle_traverse: number.jardin_luba_vszztydu_angle_de_traversee
+turn_mode: select.jardin_luba_vszztydu_mode_de_demi_tour
+perimeter_rounds: select.jardin_luba_vszztydu_tours_de_tonte_du_perimetre
+forbidden_rounds: select.jardin_luba_vszztydu_tours_de_tonte_de_zones_interdites
+charge_path: select.jardin_luba_vszztydu_trajet_de_recharge
+voice_gender: select.jardin_luba_vszztydu_genre_de_la_voix
+voice_volume: number.jardin_luba_vszztydu_volume_de_la_voix
+cancel_button: button.jardin_luba_vszztydu_annuler_la_tache_en_cours
+rtk_mode: sensor.jardin_luba_vszztydu_mode_de_positionnement
+rtk_quality: sensor.jardin_luba_vszztydu_rtk_signal_quality
+rtk_age: sensor.jardin_luba_vszztydu_rtk_correction_age
+device_signal: sensor.jardin_luba_vszztydu_device_signal_quality
+visual_pos: sensor.jardin_luba_vszztydu_etat_du_positionnement_visuel
+map_sync: sensor.jardin_luba_vszztydu_etat_de_synchronisation_de_la_carte
+connection: sensor.jardin_luba_vszztydu_connexion
+mqtt: sensor.jardin_luba_vszztydu_etat_mqtt
+location: sensor.jardin_luba_vszztydu_emplacement_actuel
+light_level: sensor.jardin_luba_vszztydu_luminosite_de_la_camera
+task_path: sensor.jardin_luba_vszztydu_zone_de_tache_path
+```
+
 ## Licence
 
 MIT

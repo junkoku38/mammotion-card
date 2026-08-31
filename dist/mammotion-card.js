@@ -7,7 +7,7 @@
  * https://github.com/junkoku38/mammotion-card
  */
 
-const CARD_VERSION = "1.5.0";
+const CARD_VERSION = "2.0.0";
 
 console.info(
   `%c MAMMOTION-CARD %c v${CARD_VERSION} `,
@@ -120,6 +120,76 @@ class MammotionCard extends HTMLElement {
   _dur(min) { if (min == null || Number.isNaN(min)) return "—"; const m = Math.max(0, Math.round(min)); const h = Math.floor(m / 60); const r = m % 60; if (h === 0) return `${r} min`; return r === 0 ? `${h} h` : `${h} h ${String(r).padStart(2, "0")}`; }
 
   _mowerState() { const c = this._config; const s = this._st(c.mower) || this._st(c.state_entity); return s ? norm(s.state) : ""; }
+
+  /**
+   * Rend un réglage interactif : number -> slider, select -> menu,
+   * sinon simple lecture. Le domaine de l'entité décide — un sensor
+   * n'est pas réglable, un number/select l'est.
+   */
+  _setControl(label, id, opts = {}) {
+    const st = this._st(id);
+    if (!st) return "";
+    const d = domainOf(id);
+    const value = st.state;
+    if (d === "number") {
+      const min = Number(st.attributes?.min ?? opts.min ?? 0);
+      const max = Number(st.attributes?.max ?? opts.max ?? 100);
+      const step = Number(st.attributes?.step ?? opts.step ?? 1);
+      const unit = st.attributes?.unit_of_measurement ?? opts.unit ?? "";
+      const v = Number(value);
+      const cur = Number.isNaN(v) ? min : v;
+      return `<div class="ctl" data-id="${esc(id)}" data-kind="number">
+        <span class="ctl-n">${esc(label)}</span>
+        <span class="ctl-v">${Number.isNaN(v) ? "—" : this._fmt(v, step < 1 ? 2 : step < 10 ? 1 : 0)}${esc(unit ? " " + unit : "")}</span>
+        <input type="range" min="${min}" max="${max}" step="${step}" value="${cur}"
+          data-id="${esc(id)}" data-kind="number" class="ctl-slider">
+      </div>`;
+    }
+    if (d === "select") {
+      const options = st.attributes?.options ?? [];
+      if (!options.length) return "";
+      return `<div class="ctl" data-id="${esc(id)}" data-kind="select">
+        <span class="ctl-n">${esc(label)}</span>
+        <select class="ctl-sel" data-id="${esc(id)}" data-kind="select">
+          ${options.map((o) => `<option value="${esc(o)}"${o === value ? " selected" : ""}>${esc(this._prettyOption(o))}</option>`).join("")}
+        </select>
+      </div>`;
+    }
+    /* lecture seule (sensor...) */
+    const v = isDead(value) ? "—" : value;
+    return `<div class="gc"><span>${esc(label)}</span><b>${esc(v)}</b></div>`;
+  }
+
+  /** Pretty options Mammotion : camelCase -> lisible. */
+  _prettyOption(o) {
+    return String(o ?? "").replace(/_/g, " ").replace(/^\w/, (m) => m.toUpperCase());
+  }
+
+  /**
+   * Branche les contrôles interactifs. Le slider n'écrit pas à chaque
+   * pixel : l'écriture part au relâchement (change) — un number de HA
+   * écrit une vraie commande à la tondeuse, pas une variable locale.
+   */
+  _bindSetControls(root) {
+    if (!root || root._bound) return;
+    root._bound = true;
+    root.querySelectorAll(".ctl-slider").forEach((el) => {
+      /* affichage local pendant le glissement */
+      el.addEventListener("input", () => {
+        const ctl = el.closest(".ctl");
+        const v = ctl.querySelector(".ctl-v");
+        if (v) v.textContent = `${this._fmt(Number(el.value), el.step < 1 ? 2 : el.step < 10 ? 1 : 0)}${el.dataset.unit ? " " + el.dataset.unit : ""}`;
+      });
+      el.addEventListener("change", () => {
+        this._hass.callService("number", "set_value", { entity_id: el.dataset.id, value: Number(el.value) });
+      });
+    });
+    root.querySelectorAll(".ctl-sel").forEach((el) => {
+      el.addEventListener("change", () => {
+        this._hass.callService("select", "select_option", { entity_id: el.dataset.id, option: el.value });
+      });
+    });
+  }
   _mode() {
     const v = this._mowerState();
     /* Une erreur code non nul prime sur l'état publishé : Mammotion laisse
@@ -256,6 +326,7 @@ class MammotionCard extends HTMLElement {
         <div class="sgi" data-a="start"><span>Tondre</span></div>
         <div class="sgi" data-a="pause"><span>Pause</span></div>
         <div class="sgi" data-a="dock"><span>Base</span></div>
+        <div class="sgi sgi-cancel" data-a="cancel"><span>Annuler</span></div>
       </div>
       <div class="activity-btns hidden"></div>
       <div class="extra-btns hidden"></div>
@@ -287,10 +358,9 @@ class MammotionCard extends HTMLElement {
     const c = this._config; if (!this._hass) return;
     if (c.mower && c.mower.startsWith("lawn_mower.")) {
       const svc = { start: "start_mowing", pause: "pause", dock: "dock" }[kind];
-      if (svc) this._hass.callService("lawn_mower", svc, { entity_id: c.mower });
-      return;
+      if (svc) { this._hass.callService("lawn_mower", svc, { entity_id: c.mower }); return; }
     }
-    const btnMap = { start: c.start_button, pause: c.pause_button, dock: c.dock_button };
+    const btnMap = { start: c.start_button, pause: c.pause_button, dock: c.dock_button, cancel: c.cancel_button };
     const btn = btnMap[kind]; if (!btn) return;
     const d = domainOf(btn);
     if (d === "button" || d === "input_button") this._hass.callService(d, "press", { entity_id: btn });
@@ -366,7 +436,10 @@ class MammotionCard extends HTMLElement {
     const finish = rem != null && rem > 0 ? new Date(Date.now() + rem * 60000) : null;
     e.legend.innerHTML = `<span><i style="background:${COL.progress}"></i>Progression</span><span><i style="background:${COL.battery}"></i>Batterie ${batt != null ? `${Math.round(batt)} %` : "—"}</span><span class="mr">${finish ? `fin ${this._hhmm(finish)}` : ""}</span>`;
     const activeSeg = mode === "mowing" ? 0 : mode === "paused" ? 1 : 2;
-    e.segw.querySelector(".pill").style.left = `calc(${activeSeg} * (100% - 8px) / 3 + 4px)`;
+    /* Avec 4 segments (Annuler ajouté), la largeur de la pastille suit. */
+    const segCount = this._els.segw ? this._els.segw.querySelectorAll(".sgi").length : 3;
+    e.segw.querySelector(".pill").style.left = `calc(${activeSeg} * (100% - 8px) / ${segCount} + 4px)`;
+    e.segw.querySelector(".pill").style.width = `calc((100% - 8px) / ${segCount})`;
     e.segw.querySelectorAll(".sgi").forEach((el, i) => el.classList.toggle("on", i === activeSeg));
     if (e.phases) this._renderPhases(mode === "mowing" ? 0 : mode === "returning" ? 1 : 2);
     this._renderZones();
@@ -395,8 +468,9 @@ class MammotionCard extends HTMLElement {
     /* Lame : les heures d'utilisation sont plus parlantes qu'un pourcentage
        de Mammotion. 60 h est la durée de vie constructeur typique. */
     const bladeH = this._num(c.blade_hours);
+    const bladeWarnH = Number(c.blade_warn_hours) || 60;
     const wearBits = [];
-    if (bladeH != null) wearBits.push(`Lame ${this._fmt(bladeH, 1)} h${bladeH >= 60 ? " ⚠" : ""}`);
+    if (bladeH != null) wearBits.push(`Lame ${this._fmt(bladeH, 1)} h${bladeH >= bladeWarnH ? " ⚠" : ""}`);
     else if (wear != null) wearBits.push(`Lames · ${this._fmt(wear, 0)} %`);
     if (km != null) wearBits.unshift(`${this._fmt(km, 0)} km`);
     if (!this._history) this._renderChart();
@@ -407,20 +481,29 @@ class MammotionCard extends HTMLElement {
     const fmtNum = (id, suffix = "") => { const v = this._num(id); return v != null ? this._fmt(v, v < 10 ? 1 : 0) + suffix : "—"; };
     const cell = (label, value) => `<div class="gc"><span>${esc(label)}</span><b>${esc(value)}</b></div>`;
 
-    // Reglages de tonte
+    // Reglages de tonte — interactifs : number -> slider, select -> menu.
     if (e.mowGrid) {
       const items = [];
-      if (c.speed) items.push(cell("Vitesse", fmtNum(c.speed, " m/s")));
-      if (c.spacing) items.push(cell("Espacement", fmtNum(c.spacing, " cm")));
-      if (c.angle) items.push(cell("Angle", fmtVal(c.angle)));
-      if (c.trajectory_mode) items.push(cell("Trajectoire", fmtVal(c.trajectory_mode)));
-      if (c.mowing_order) items.push(cell("Ordre", fmtVal(c.mowing_order)));
-      if (c.obstacle_detection) items.push(cell("Obstacles", fmtVal(c.obstacle_detection)));
-      if (c.wildlife_safety) items.push(cell("Faune", fmtVal(c.wildlife_safety)));
-      if (c.rain_detection_mowing) items.push(cell("Pluie (tonte)", fmtVal(c.rain_detection_mowing)));
-      if (c.rain_detection_during) items.push(cell("Pluie (pendant)", fmtVal(c.rain_detection_during)));
+      if (c.speed) items.push(this._setControl("Vitesse", c.speed, { unit: "m/s" }));
+      if (c.spacing) items.push(this._setControl("Espacement", c.spacing, { unit: "cm" }));
+      if (c.blade_height_set) items.push(this._setControl("Hauteur lames", c.blade_height_set, { unit: "mm" }));
+      if (c.angle) items.push(this._setControl("Angle", c.angle));
+      if (c.angle_traverse) items.push(this._setControl("Angle traversée", c.angle_traverse));
+      if (c.trajectory_mode) items.push(this._setControl("Trajectoire", c.trajectory_mode));
+      if (c.mowing_order) items.push(this._setControl("Ordre", c.mowing_order));
+      if (c.obstacle_detection) items.push(this._setControl("Obstacles", c.obstacle_detection));
+      if (c.turn_mode) items.push(this._setControl("Demi-tour", c.turn_mode));
+      if (c.perimeter_rounds) items.push(this._setControl("Tours périmètre", c.perimeter_rounds));
+      if (c.forbidden_rounds) items.push(this._setControl("Tours zones interdites", c.forbidden_rounds));
+      if (c.charge_path) items.push(this._setControl("Trajet de recharge", c.charge_path));
+      if (c.wildlife_safety) items.push(this._setControl("Faune", c.wildlife_safety));
+      if (c.rain_detection_mowing) items.push(this._setControl("Pluie (tonte)", c.rain_detection_mowing));
+      if (c.rain_detection_during) items.push(this._setControl("Pluie (pendant)", c.rain_detection_during));
+      if (c.voice_gender) items.push(this._setControl("Genre de voix", c.voice_gender));
+      if (c.voice_volume) items.push(this._setControl("Volume", c.voice_volume));
       e.mowGrid.innerHTML = items.join("");
       e.mowGrid.closest(".acc").classList.toggle("hidden", !items.length);
+      this._bindSetControls(e.mowGrid);
     }
 
     // Connexion et positionnement
@@ -429,6 +512,17 @@ class MammotionCard extends HTMLElement {
       if (c.activity_mode) items.push(cell("Mode activité", fmtVal(c.activity_mode)));
       if (c.position_type) items.push(cell("Position", fmtVal(c.position_type)));
       if (c.rtk_status) items.push(cell("RTK", fmtVal(c.rtk_status)));
+      if (c.rtk_mode) items.push(cell("Mode pos.", fmtVal(c.rtk_mode)));
+      if (c.rtk_quality) items.push(cell("Qualité RTK", fmtNum(c.rtk_quality)));
+      if (c.rtk_age) items.push(cell("Âge corr.", fmtNum(c.rtk_age, " s")));
+      if (c.device_signal) items.push(cell("Signal app.", fmtNum(c.device_signal)));
+      if (c.visual_pos) items.push(cell("Pos. visuelle", fmtVal(c.visual_pos)));
+      if (c.map_sync) items.push(cell("Carte", fmtVal(c.map_sync)));
+      if (c.connection) items.push(cell("Connexion", fmtVal(c.connection)));
+      if (c.mqtt) items.push(cell("MQTT", fmtVal(c.mqtt)));
+      if (c.location) items.push(cell("Lieu", fmtVal(c.location)));
+      if (c.light_level) items.push(cell("Lumière", fmtVal(c.light_level)));
+      if (c.task_path) items.push(cell("Tâche", fmtVal(c.task_path)));
       if (c.satellites) items.push(cell("Satellites", fmtNum(c.satellites)));
       if (c.satellites_l1) items.push(cell("Sat L1", fmtNum(c.satellites_l1)));
       if (c.satellites_l2) items.push(cell("Sat L2", fmtNum(c.satellites_l2)));
@@ -577,10 +671,14 @@ ha-card::after{content:"";position:absolute;left:20px;right:20px;top:0;height:1p
 .mlg i{width:7px;height:7px;border-radius:50%;display:inline-block;margin-right:5px;}
 .mlg .mr{margin-left:auto;font-variant-numeric:tabular-nums;}
 .segw{position:relative;display:flex;margin-top:16px;padding:4px;border-radius:16px;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.08);z-index:1;}
-.pill{position:absolute;top:4px;bottom:4px;left:4px;width:calc((100% - 8px)/3);border-radius:13px;background:rgba(255,255,255,.13);box-shadow:inset 0 0 0 1px rgba(255,255,255,.16),0 4px 14px rgba(0,0,0,.3);transition:left .32s cubic-bezier(.4,1.3,.5,1);}
+.pill{position:absolute;top:4px;bottom:4px;left:4px;width:calc((100% - 8px)/4);border-radius:13px;background:rgba(255,255,255,.13);box-shadow:inset 0 0 0 1px rgba(255,255,255,.16),0 4px 14px rgba(0,0,0,.3);transition:left .32s cubic-bezier(.4,1.3,.5,1),width .32s;}
 .sgi{position:relative;flex:1;text-align:center;padding:11px 0;cursor:pointer;}
 .sgi span{font-size:11px;font-weight:600;color:rgba(255,255,255,.45);}
 .sgi.on span{color:#eef1f6;}
+/* Annuler : discret par défaut — stopper une tâche est un geste
+   délibéré, pas une action à confondre avec Tondre. */
+.sgi-cancel span{color:rgba(255,138,122,.55);}
+.sgi-cancel.on span{color:#ff8a7a;}
 .phw{margin-top:18px;position:relative;z-index:1;}
 .pb{display:block;width:100%;height:8px;}
 .phr{display:flex;justify-content:space-between;margin-top:7px;}
@@ -642,7 +740,28 @@ ha-card::after{content:"";position:absolute;left:20px;right:20px;top:0;height:1p
 .gc span{font-size:8px;letter-spacing:.6px;text-transform:uppercase;color:rgba(255,255,255,.36);font-weight:600;}
 .gc b{font-size:11px;font-weight:600;font-variant-numeric:tabular-nums;}
 
-#mow-grid,#conn-grid{display:flex;flex-wrap:wrap;gap:3px;}
+/* Réglages interactifs : sliders et menus, pleine largeur */
+#mow-grid{display:flex;flex-direction:column;gap:2px;}
+.ctl{display:flex;align-items:center;gap:10px;padding:8px 0;}
+.ctl+.ctl{border-top:1px solid rgba(255,255,255,.03);}
+.ctl-n{font-size:11px;color:rgba(255,255,255,.55);width:118px;flex-shrink:0;}
+.ctl-v{font-size:11px;font-weight:600;font-variant-numeric:tabular-nums;color:#eef1f6;width:52px;text-align:right;flex-shrink:0;}
+.ctl-slider{flex:1;appearance:none;-webkit-appearance:none;height:4px;border-radius:2px;
+  background:rgba(255,255,255,.12);outline:none;cursor:pointer;margin:0;}
+.ctl-slider::-webkit-slider-thumb{appearance:none;-webkit-appearance:none;width:16px;height:16px;border-radius:50%;
+  background:var(--mm-green);border:2px solid #12151c;box-shadow:0 1px 5px rgba(0,0,0,.4);cursor:pointer;}
+.ctl-slider::-moz-range-thumb{width:14px;height:14px;border-radius:50%;
+  background:var(--mm-green);border:2px solid #12151c;cursor:pointer;}
+.ctl-sel{flex:1;font-family:inherit;font-size:11px;font-weight:600;color:#eef1f6;
+  background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.16);border-radius:9px;
+  padding:6px 10px;cursor:pointer;appearance:none;-webkit-appearance:none;
+  background-image:url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%23ffffff88'%3E%3Cpath d='M7 10l5 5 5-5z'/%3E%3C/svg%3E");
+  background-repeat:no-repeat;background-position:right 8px center;background-size:14px;}
+.ctl-sel:hover{background-color:rgba(255,255,255,.1);}
+.ctl-sel:focus{outline:none;border-color:var(--mm-green);}
+.ctl-sel option{background:#1a1d24;color:#eef1f6;}
+
+#conn-grid{display:flex;flex-wrap:wrap;gap:3px;}
 
 .sw-row{display:flex;align-items:center;justify-content:space-between;gap:10px;
   padding:8px 0;cursor:pointer;}
@@ -668,13 +787,17 @@ ha-card::after{content:"";position:absolute;left:20px;right:20px;top:0;height:1p
 
 const FLAT_KEYS = [
   "name","mower","state_entity","battery","progress","remaining_time","session_duration",
-  "elapsed_time","total_time","area","current_zone","charging","blade_height","satellites","rtk_status","error","error_code","error_time",
-  "odometer","blade_wear","blade_hours","start_button","pause_button","dock_button",
+  "elapsed_time","total_time","area","current_zone","charging","blade_height","blade_height_set","satellites","rtk_status","error","error_code","error_time",
+  "odometer","blade_wear","blade_hours","blade_warn_hours","start_button","pause_button","dock_button","cancel_button",
   "camera","restart_button","edge_button","leave_dock_button","battery_cycles","total_work_time",
   "sync_map_button","sync_schedule_button","sync_rtk_button","idle_hours",
-  "speed","spacing","angle","trajectory_mode","mowing_order","obstacle_detection",
+  "speed","spacing","angle","angle_traverse","turn_mode","perimeter_rounds","forbidden_rounds","charge_path",
+  "trajectory_mode","mowing_order","obstacle_detection",
   "wildlife_safety","rain_detection_mowing","rain_detection_during",
-  "activity_mode","position_type","satellites_l1","satellites_l2",
+  "voice_gender","voice_volume",
+  "activity_mode","position_type","rtk_mode","rtk_quality","rtk_age","device_signal",
+  "visual_pos","map_sync","connection","mqtt","location","light_level","task_path",
+  "satellites_l1","satellites_l2",
   "wifi_signal","cellular_signal","bluetooth_signal","firmware",
   "bluetooth_switch","cloud_switch","led_switch","voice_switch","auto_update_switch",
   "activity_1_button","activity_2_button","activity_3_button",
@@ -721,6 +844,27 @@ const LABELS = {
   activity_1_button: "Bouton Activité 1",
   activity_2_button: "Bouton Activité 2",
   activity_3_button: "Bouton Activité 3",
+  cancel_button: "Bouton Annuler la tâche",
+  blade_height_set: "Hauteur lames réglable (number)",
+  blade_warn_hours: "Seuil d'usure lame (h)",
+  angle_traverse: "Angle de traversée",
+  turn_mode: "Mode de demi-tour",
+  perimeter_rounds: "Tours de tonte du périmètre",
+  forbidden_rounds: "Tours zones interdites",
+  charge_path: "Trajet de recharge",
+  voice_gender: "Genre de la voix",
+  voice_volume: "Volume de la voix",
+  rtk_mode: "Mode de positionnement",
+  rtk_quality: "Qualité signal RTK",
+  rtk_age: "Âge correction RTK",
+  device_signal: "Qualité signal appareil",
+  visual_pos: "État positionnement visuel",
+  map_sync: "État synchro carte",
+  connection: "Connexion",
+  mqtt: "État MQTT",
+  location: "Emplacement actuel",
+  light_level: "Luminosité caméra",
+  task_path: "Tâche en cours (chemin)",
   hours: "Fenêtre d'historique", points: "Échantillons", refresh: "Relecture",
   show_battery_chart: "Afficher la courbe de batterie", show_phases: "Afficher les phases",
 };
@@ -754,15 +898,23 @@ const SCHEMA = [
   {
     type: "expandable", name: "", title: "Réglages de tonte", icon: "mdi:grass",
     schema: [
-      { name: "speed", selector: { entity: { filter: [{ domain: ["sensor", "number"] }] } } },
+      { name: "speed", selector: { entity: { filter: [{ domain: ["number", "sensor"] }] } } },
       { name: "spacing", selector: { entity: { filter: [{ domain: "number" }] } } },
+      { name: "blade_height_set", selector: { entity: { filter: [{ domain: "number" }] } } },
       { name: "angle", selector: { entity: { filter: [{ domain: "select" }] } } },
+      { name: "angle_traverse", selector: { entity: { filter: [{ domain: "number" }] } } },
       { name: "trajectory_mode", selector: { entity: { filter: [{ domain: "select" }] } } },
       { name: "mowing_order", selector: { entity: { filter: [{ domain: "select" }] } } },
       { name: "obstacle_detection", selector: { entity: { filter: [{ domain: "select" }] } } },
+      { name: "turn_mode", selector: { entity: { filter: [{ domain: "select" }] } } },
+      { name: "perimeter_rounds", selector: { entity: { filter: [{ domain: "select" }] } } },
+      { name: "forbidden_rounds", selector: { entity: { filter: [{ domain: "select" }] } } },
+      { name: "charge_path", selector: { entity: { filter: [{ domain: "select" }] } } },
       { name: "wildlife_safety", selector: { entity: { filter: [{ domain: "select" }] } } },
       { name: "rain_detection_mowing", selector: { entity: { filter: [{ domain: ["switch","select"] }] } } },
       { name: "rain_detection_during", selector: { entity: { filter: [{ domain: ["switch","select"] }] } } },
+      { name: "voice_gender", selector: { entity: { filter: [{ domain: "select" }] } } },
+      { name: "voice_volume", selector: { entity: { filter: [{ domain: "number" }] } } },
     ],
   },
   {
@@ -774,6 +926,7 @@ const SCHEMA = [
       { name: "odometer", selector: { entity: { filter: [{ domain: "sensor" }] } } },
       { name: "blade_wear", selector: { entity: { filter: [{ domain: "sensor" }] } } },
       { name: "blade_hours", selector: { entity: { filter: [{ domain: "sensor" }] } } },
+      { name: "blade_warn_hours", selector: { number: { min: 10, max: 200, mode: "box", unit_of_measurement: "h" } } },
       { name: "battery_cycles", selector: { entity: { filter: [{ domain: "sensor" }] } } },
       { name: "total_work_time", selector: { entity: { filter: [{ domain: "sensor" }] } } },
     ],
@@ -785,6 +938,17 @@ const SCHEMA = [
     schema: [
       { name: "activity_mode", selector: { entity: { filter: [{ domain: "sensor" }] } } },
       { name: "position_type", selector: { entity: { filter: [{ domain: "sensor" }] } } },
+      { name: "rtk_mode", selector: { entity: { filter: [{ domain: "sensor" }] } } },
+      { name: "rtk_quality", selector: { entity: { filter: [{ domain: "sensor" }] } } },
+      { name: "rtk_age", selector: { entity: { filter: [{ domain: "sensor" }] } } },
+      { name: "device_signal", selector: { entity: { filter: [{ domain: "sensor" }] } } },
+      { name: "visual_pos", selector: { entity: { filter: [{ domain: "sensor" }] } } },
+      { name: "map_sync", selector: { entity: { filter: [{ domain: "sensor" }] } } },
+      { name: "connection", selector: { entity: { filter: [{ domain: "sensor" }] } } },
+      { name: "mqtt", selector: { entity: { filter: [{ domain: "sensor" }] } } },
+      { name: "location", selector: { entity: { filter: [{ domain: "sensor" }] } } },
+      { name: "light_level", selector: { entity: { filter: [{ domain: "sensor" }] } } },
+      { name: "task_path", selector: { entity: { filter: [{ domain: "sensor" }] } } },
       { name: "satellites_l1", selector: { entity: { filter: [{ domain: "sensor" }] } } },
       { name: "satellites_l2", selector: { entity: { filter: [{ domain: "sensor" }] } } },
       { name: "wifi_signal", selector: { entity: { filter: [{ domain: "sensor", device_class: "signal_strength" }] } } },
@@ -810,6 +974,7 @@ const SCHEMA = [
       { name: "start_button", selector: { entity: { filter: [{ domain: ["button", "input_button"] }] } } },
       { name: "pause_button", selector: { entity: { filter: [{ domain: ["button", "input_button"] }] } } },
       { name: "dock_button", selector: { entity: { filter: [{ domain: ["button", "input_button"] }] } } },
+      { name: "cancel_button", selector: { entity: { filter: [{ domain: ["button", "input_button"] }] } } },
       { name: "edge_button", selector: { entity: { filter: [{ domain: "button" }] } } },
       { name: "leave_dock_button", selector: { entity: { filter: [{ domain: "button" }] } } },
       { name: "restart_button", selector: { entity: { filter: [{ domain: "button" }] } } },
