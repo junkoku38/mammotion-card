@@ -182,6 +182,13 @@ task_path: sensor.jardin_luba_vszztydu_zone_de_tache_path
   `_hasRealError()` que le message est réellement une erreur avant
   d'afficher quoi que ce soit.
 
+## Nouveautés v2.3.2 — correction « Error message not found »
+
+- **Détection robuste** de la chaîne « error message not found » (et ses
+  variantes : espaces multiples, underscores, faute de frappe, suffixes).
+  La carte affiche désormais « Code 11133 » (le vrai code Mammotion)
+  plutôt que ce message générique.
+
 ## Licence
 
 MIT

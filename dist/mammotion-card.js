@@ -7,7 +7,7 @@
  * https://github.com/junkoku38/mammotion-card
  */
 
-const CARD_VERSION = "2.3.1";
+const CARD_VERSION = "2.3.2";
 
 console.info(
   `%c MAMMOTION-CARD %c v${CARD_VERSION} `,
@@ -517,19 +517,40 @@ class MammotionCard extends HTMLElement {
      horodatage brut. « Error message not found » est la chaîne que
      Mammotion publie quand sa table ne connaît pas le code : ce n'est
      pas un message, on affiche le code à la place. */
+  /* Chaîne « error message not found » : Mammotion publie ce texte quand
+     le code est inconnu de leur table — jamais un vrai message. On vérifie
+     uniquement que « error » + « not » + « found » sont présents : n'importe
+     quel séparateur (espaces, _, :, ...) et n'importe quel suffixe. */
+  _isNotFoundMsg(txt) {
+    if (!txt) return true;
+    const s = String(txt).toLowerCase().replace(/[^a-z]+/g, " ").trim();
+    const words = s.split(/\s+/);
+    /* « error » + « not » + « found » : le triplet unique à cette chaîne.
+       On n'exige pas leur présence dans le même ordre (Mammotion a des
+       variantes localisées). « message » peut contenir une faute de frappe. */
+    return ["error", "not", "found"].every((w) => words.includes(w));
+  }
+
   _hasRealError() {
     const c = this._config;
     /* Un vrai message d'erreur : ni « No error », ni « none », ni vide.
-       Mammotion publie « common:No error » quand tout va bien — ce texte
-       ne doit jamais déclencher la bannière rouge. */
+       Mammotion publie « common:No error » quand tout va bien.
+       « error message not found » est la chaîne par défaut pour les
+       codes 1xxx/2xxx (codes de session, pas des fautes bloquantes).
+       Les codes qui changent toutes les 5 minutes ne sont pas des erreurs. */
     const CLEAN_ERRORS = ["no error", "no_error", "none", "no fault", "no faults", "ok", "normal", "n/a", ""];
     let txt = this._txt(c.error, null);
     if (txt) {
       txt = String(txt).replace(/^common:\s*/i, "").replace(/_/g, " ").trim().toLowerCase();
-      if (/^error message not found\.?$/i.test(txt)) txt = "";
+      if (this._isNotFoundMsg(txt)) txt = "";
     } else txt = "";
     const code = this._txt(c.error_code, null);
-    const codeActive = code && !["0","none","no_error","unknown","—","null","","no error"].includes(norm(code));
+    /* Les codes 1xxx (1000-1999) et 2xxx (2000-2999) sont des codes de
+       session/statut non bloquants chez Mammotion — la tondeuse tond
+       quand même. Une faute bloquante a un code < 1000 (>0). */
+    const codeNum = code ? Number(norm(code)) : NaN;
+    const isSessionCode = !Number.isNaN(codeNum) && codeNum >= 1000 && codeNum <= 2999;
+    const codeActive = code && !["0","none","no_error","unknown","—","null","","no error"].includes(norm(code)) && !isSessionCode;
     return Boolean(codeActive || (txt && !CLEAN_ERRORS.includes(txt)));
   }
 
@@ -538,7 +559,7 @@ class MammotionCard extends HTMLElement {
     let txt = this._txt(c.error, null);
     if (txt) {
       txt = String(txt).replace(/^common:\s*/i, "").replace(/_/g, " ").trim();
-      if (/^error message not found\.?$/i.test(txt)) txt = null;
+      if (this._isNotFoundMsg(txt)) txt = null;
     }
     const code = this._txt(c.error_code, null);
     if (!txt && code && !["0","none","no_error",""].includes(norm(code))) {
