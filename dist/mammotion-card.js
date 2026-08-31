@@ -7,7 +7,7 @@
  * https://github.com/junkoku38/mammotion-card
  */
 
-const CARD_VERSION = "2.3.2";
+const CARD_VERSION = "2.5.0";
 
 console.info(
   `%c MAMMOTION-CARD %c v${CARD_VERSION} `,
@@ -46,6 +46,25 @@ const THEMES = {
       "--mm-radius-sm": "13px",
       "--mm-shadow": "none",
       "--mm-glow-opacity": "1",
+    },
+  },
+  carbon: {
+    name: "Carbon",
+    vars: {
+      "--mm-bg": "#141416",
+      "--mm-green": "#ff7a18",
+      "--mm-blue": "#4ade80",
+      "--mm-warn": "#f0c040",
+      "--mm-alert": "#e04030",
+      "--mm-txt": "#e8e6e3",
+      "--mm-dim": "#8a8a90",
+      "--mm-faint": "rgba(232,230,227,.35)",
+      "--mm-panel": "rgba(232,230,227,.04)",
+      "--mm-border": "#2a2a2e",
+      "--mm-radius": "0px",
+      "--mm-radius-sm": "0px",
+      "--mm-shadow": "none",
+      "--mm-glow-opacity": "0",
     },
   },
 };
@@ -1089,6 +1108,85 @@ ha-card::after{content:"";position:absolute;left:20px;right:20px;top:0;height:1p
 .sf .left i{width:5px;height:5px;border-radius:50%;background:var(--mm-green);flex-shrink:0;}
 .sf .left i.warn{background:var(--mm-alert);}
 .sf .right{text-align:right;font-variant-numeric:tabular-nums;flex-shrink:0;}
+
+/* ------------------------------------------------------------------ */
+/* CARBON : industriel, filets, monospace, sans arrondis                */
+/* ------------------------------------------------------------------ */
+
+:host([data-theme="carbon"]) ha-card{
+  padding:18px 16px 14px;border-radius:0;box-shadow:none;
+}
+:host([data-theme="carbon"]) .glow,
+:host([data-theme="carbon"]) .m-docked .glow,
+:host([data-theme="carbon"]) .m-returning .glow,
+:host([data-theme="carbon"]) .m-paused .glow,
+:host([data-theme="carbon"]) .m-error .glow{display:none;}
+:host([data-theme="carbon"]) .mc{gap:4px;}
+:host([data-theme="carbon"]) .mi{width:18px;height:18px;}
+/* En-tête : nom + pastille centrés, pourcentage à droite */
+:host([data-theme="carbon"]) .ms{justify-content:center;}
+:host([data-theme="carbon"]) .ms .nm{font-weight:600;}
+/* Anneaux : trait plus épais, pas de round caps */
+:host([data-theme="carbon"]) .dr .ring-bg{stroke-width:1.5;}
+:host([data-theme="carbon"]) .dr .rp{stroke-width:10;}
+:host([data-theme="carbon"]) .dr .rb{stroke-width:7;}
+:host([data-theme="carbon"]) .dr .rp{stroke-linecap:butt;}
+:host([data-theme="carbon"]) .dr .rb{stroke-linecap:butt;}
+/* Valeurs du centre plus sobres */
+:host([data-theme="carbon"]) .mw{font-size:34px;font-weight:300;letter-spacing:0;font-family:ui-monospace,"SF Mono","Cascadia Code","Roboto Mono",monospace;font-variant-numeric:tabular-nums;}
+:host([data-theme="carbon"]) .mw span{font-size:12px;font-weight:400;}
+:host([data-theme="carbon"]) .msb{font-size:10px;letter-spacing:0;}
+/* Légende */
+:host([data-theme="carbon"]) .mlg i{width:5px;height:5px;border-radius:50%;}
+:host([data-theme="carbon"]) .mlg span{font-family:ui-monospace,"SF Mono","Cascadia Code","Roboto Mono",monospace;font-variant-numeric:tabular-nums;}
+/* Contrôles segmentés : filets au lieu d'espaces, pas de coin arrondi */
+:host([data-theme="carbon"]) .segw{margin-top:14px;padding:0;border-radius:0;background:transparent;border:1px solid var(--mm-border);}
+:host([data-theme="carbon"]) .pill{top:0;bottom:0;left:0;border-radius:0;background:var(--mm-panel);box-shadow:inset 0 0 0 1px var(--mm-border);}
+:host([data-theme="carbon"]) .sgi{padding:9px 0;border-right:1px solid var(--mm-border);}
+:host([data-theme="carbon"]) .sgi:last-child{border-right:none;}
+/* Cellules d'information : filets 1px, pas d'arrondi, pas de fond */
+:host([data-theme="carbon"]) .bg4{grid-template-columns:repeat(2,1fr);gap:0;border:1px solid var(--mm-border);border-radius:0;}
+:host([data-theme="carbon"]) .bc4{background:transparent;border:none;border-right:1px solid var(--mm-border);border-bottom:1px solid var(--mm-border);border-radius:0;padding:7px 8px;text-align:left;}
+:host([data-theme="carbon"]) .bc4:nth-child(even){border-right:none;}
+:host([data-theme="carbon"]) .bc4:nth-last-child(-n+2){border-bottom:none;}
+:host([data-theme="carbon"]) .bc4 span{display:block;font-size:8px;color:var(--mm-faint);margin-bottom:3px;}
+:host([data-theme="carbon"]) .bc4 b{font-size:12px;font-weight:600;font-family:ui-monospace,"SF Mono","Cascadia Code","Roboto Mono",monospace;font-variant-numeric:tabular-nums;}
+/* Accordéons : filets, pas d'arrondi */
+:host([data-theme="carbon"]) .acc{border-radius:0;background:transparent;border:1px solid var(--mm-border);}
+:host([data-theme="carbon"]) .accb{background:transparent;}
+:host([data-theme="carbon"]) .accs{padding:10px 8px;}
+/* Grilles intérieures : pas d'arrondi */
+:host([data-theme="carbon"]) .gc{border-radius:0;background:transparent;border:1px solid var(--mm-border);}
+:host([data-theme="carbon"]) .ctl-slider{height:1px;border-radius:0;}
+:host([data-theme="carbon"]) .ctl-slider::-webkit-slider-thumb{width:12px;height:12px;border-width:1px;border-color:var(--mm-txt);background:var(--mm-green);box-shadow:none;border-radius:0;}
+:host([data-theme="carbon"]) .ctl-slider::-moz-range-thumb{width:12px;height:12px;border-width:1px;border-color:var(--mm-txt);background:var(--mm-green);border-radius:0;}
+:host([data-theme="carbon"]) .ctl-sel{border-radius:0;background:var(--mm-panel);border-color:var(--mm-border);font-family:ui-monospace,"SF Mono","Cascadia Code","Roboto Mono",monospace;font-variant-numeric:tabular-nums;}
+/* Boutons : rectangulaires, filets */
+:host([data-theme="carbon"]) .eb{border-radius:0;border:1px solid var(--mm-border);background:transparent;font-family:ui-monospace,"SF Mono","Cascadia Code","Roboto Mono",monospace;font-variant-numeric:tabular-nums;}
+:host([data-theme="carbon"]) .activity-btns .eb{background:transparent;color:var(--mm-txt);}
+:host([data-theme="carbon"]) .activity-btns .eb:hover{background:var(--mm-panel);}
+:host([data-theme="carbon"]) .eb.ghost{color:rgba(224,64,48,.6);border-color:rgba(224,64,48,.25);}
+:host([data-theme="carbon"]) .errw{border-radius:0;}
+:host([data-theme="carbon"]) .cam-slot{border-radius:0;}
+:host([data-theme="carbon"]) .lk{border-radius:0;font-family:ui-monospace,"SF Mono","Cascadia Code","Roboto Mono",monospace;}
+:host([data-theme="carbon"]) .lk.rain{background:rgba(74,222,128,.08);border-color:rgba(74,222,128,.25);color:#8ec9a8;}
+/* Barres hebdo : plat */
+:host([data-theme="carbon"]) .wb i{background:var(--mm-green);opacity:.8;border-radius:0;}
+:host([data-theme="carbon"]) .zb i{background:var(--mm-green);opacity:.8;border-radius:0;}
+:host([data-theme="carbon"]) .zp.done{color:var(--mm-green);}
+/* Sliders / toggles */
+:host([data-theme="carbon"]) .sw-t{border-radius:0;background:rgba(232,230,227,.08);}
+:host([data-theme="carbon"]) .sw-t::after{background:rgba(232,230,227,.3);border-radius:0;}
+:host([data-theme="carbon"]) .sw-t.on{background:rgba(255,122,24,.25);}
+:host([data-theme="carbon"]) .sw-t.on::after{left:16px;background:var(--mm-green);}
+/* Pied */
+:host([data-theme="carbon"]) .sf{border-top:1px solid var(--mm-border);margin-top:12px;padding-top:10px;font-size:9.5px;}
+:host([data-theme="carbon"]) .errw svg{fill:#e04030;}
+/* Supprime les micro-interactions de scale — pas nécessaire sur l'industriel */
+:host([data-theme="carbon"]) .sgi:active,
+:host([data-theme="carbon"]) .eb:active,
+:host([data-theme="carbon"]) .zr:active,
+:host([data-theme="carbon"]) .sw-row:active{transform:none;}
 `;
 
 
