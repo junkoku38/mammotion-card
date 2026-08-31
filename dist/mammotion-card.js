@@ -7,7 +7,7 @@
  * https://github.com/junkoku38/mammotion-card
  */
 
-const CARD_VERSION = "3.0.0";
+const CARD_VERSION = "3.0.2";
 
 console.info(
   `%c MAMMOTION-CARD %c v${CARD_VERSION} `,
@@ -439,15 +439,18 @@ class MammotionCard extends HTMLElement {
   }
   _mode() {
     const v = this._mowerState();
-    /* Une erreur code non nul prime sur l'état publishé : Mammotion laisse
-       parfois l'état sur « paused » pendant une faute bloquante (caméra
-       masquée, coincidence...). Le code est la vérité, l'état un souhait. */
+    /* Un code d'erreur non nul prime UNIQUEMENT quand la tondeuse ne tond
+       pas : en tonte (mowing), la machine tourne — un code résiduel ne doit
+       pas faire passer la carte en erreur. Hors tonte, le code prime sur
+       l'état (Mammotion laisse parfois « paused » pendant une faute bloquante). */
     const errCode = this._txt(this._config.error_code, null);
     const errActive = errCode && !["0","none","no_error","unknown","—","null",""].includes(norm(errCode));
-    if (errActive || ERR_WORDS.some((w) => v.includes(w))) return "error";
+    const isMowing = MOW_WORDS.some((w) => v.includes(w));
+    if (!isMowing && errActive) return "error";
+    if (ERR_WORDS.some((w) => v.includes(w))) return "error";
     if (PAUSE_WORDS.some((w) => v.includes(w))) return "paused";
     if (RETURN_WORDS.some((w) => v.includes(w))) return "returning";
-    if (MOW_WORDS.some((w) => v.includes(w))) return "mowing";
+    if (isMowing) return "mowing";
     if (DOCK_WORDS.some((w) => v.includes(w))) return "docked";
     return "docked";
   }
@@ -512,6 +515,12 @@ class MammotionCard extends HTMLElement {
     const code = this._txt(c.error_code, null);
     if (!txt && code && !["0","none","no_error",""].includes(norm(code))) {
       txt = `Code ${code}`;
+    }
+    /* Code seul sans texte : moins parlant qu'utile. On montre le texte
+       plutôt qu'un « Code 11133 » qui n'apprend rien. */
+    if (txt && txt !== code) {
+      const hasCode = code && !["0","none","no_error",""].includes(norm(code));
+      if (hasCode) txt += ` (${code})`;
     }
     const t = this._st(c.error_time)?.state;
     let when = "";

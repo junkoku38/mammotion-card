@@ -148,6 +148,15 @@ task_path: sensor.jardin_luba_vszztydu_zone_de_tache_path
   un code inconnu) est remplacé par « Code 6404 ».
 - **Micro-interactions** : scale au toucher sur tout élément actionnable.
 
+## Nouveautés v3.0.2 — correction faux positif erreur en tonte
+
+Un code résiduel (`error_code` non nul) ne passe plus la carte en mode
+erreur quand la tondeuse **tond réellement** (`mowing`). Mammotion laisse
+des codes de session (1xxx/2xxx, 11133...) dont le texte est « Error
+message not found » — la tondeuse tourne, ce n'est pas bloquant. La
+bannière d'erreur ne s'affiche plus que si la machine est réellement
+arrêtée (pause, base, faute) avec un code actif.
+
 ## Nouveautés v3.0.0 — 4 thèmes, palette fixe
 
 Trois thèmes historiques supprimés (minimal, modern, nature), deux nouveaux ajoutés.
