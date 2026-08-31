@@ -48,6 +48,7 @@ sync_rtk_button: button.jardin_luba_vszztydu_synchroniser_rtk_et_base
 hours: 4
 show_battery_chart: true
 show_phases: true
+theme: glass  # glass | minimal | modern
 ```
 
 ## Nouveautés v1.4.0
@@ -146,6 +147,21 @@ task_path: sensor.jardin_luba_vszztydu_zone_de_tache_path
   temps normal, et « Error message not found » (chaîne Mammotion pour
   un code inconnu) est remplacé par « Code 6404 ».
 - **Micro-interactions** : scale au toucher sur tout élément actionnable.
+
+## Nouveautés v2.2.0 — thèmes visuels
+
+- **Choix du design** : paramètre `theme` avec 3 styles au choix,
+  sélectionnable dans l'éditeur visuel (Affichage → Design de la carte)
+  ou en YAML :
+  - `glass` (défaut) : design original sombre, anneaux et glow radial.
+  - `minimal` : plat, aéré, bordures fines en pointillés, typographie
+    légère — idéal pour un dashboard épuré.
+  - `modern` : gradients, ombres portées, glassmorphism renforcé,
+    effet de bordure lumineuse.
+- **Aperçu rapide** : dans l'éditeur visuel, une rangée de pastilles
+  colorées permet de voir et sélectionner le thème d'un coup d'œil.
+- **Adaptation automatique** : chaque thème suit le mode clair/sombre
+  de Home Assistant.
 
 ## Licence
 

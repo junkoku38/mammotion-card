@@ -7,7 +7,7 @@
  * https://github.com/junkoku38/mammotion-card
  */
 
-const CARD_VERSION = "2.1.0";
+const CARD_VERSION = "2.2.0";
 
 console.info(
   `%c MAMMOTION-CARD %c v${CARD_VERSION} `,
@@ -23,6 +23,109 @@ const I = {
 };
 
 const COL = { progress: "#c9f0a8", battery: "#7fb3ff", warn: "#ffc76b", alert: "#ff6b5c", dim: "rgba(255,255,255,.3)" };
+
+/* ------------------------------------------------------------------ */
+/* Système de thèmes                                                    */
+/* ------------------------------------------------------------------ */
+
+const THEMES = {
+  glass: {
+    name: "Glass (défaut)",
+    vars: {
+      "--mm-bg": "#12151c",
+      "--mm-green": "#c9f0a8",
+      "--mm-blue": "#7fb3ff",
+      "--mm-warn": "#ffc76b",
+      "--mm-alert": "#ff6b5c",
+      "--mm-txt": "#eef1f6",
+      "--mm-dim": "rgba(255,255,255,.5)",
+      "--mm-faint": "rgba(255,255,255,.3)",
+      "--mm-panel": "rgba(255,255,255,.04)",
+      "--mm-border": "rgba(255,255,255,.07)",
+      "--mm-radius": "26px",
+      "--mm-radius-sm": "13px",
+      "--mm-shadow": "none",
+      "--mm-glow-opacity": "1",
+    },
+    lightVars: {
+      "--mm-bg": "var(--card-background-color,#fff)",
+      "--mm-txt": "#1c1f26",
+      "--mm-dim": "rgba(20,24,32,.55)",
+      "--mm-faint": "rgba(20,24,32,.38)",
+      "--mm-panel": "rgba(20,24,32,.045)",
+      "--mm-border": "rgba(20,24,32,.10)",
+      "--mm-green": "#3e7d1f",
+      "--mm-blue": "#2f6bd8",
+      "--mm-warn": "#b07818",
+      "--mm-alert": "#c0392b",
+    },
+  },
+  minimal: {
+    name: "Minimal",
+    vars: {
+      "--mm-bg": "#ffffff",
+      "--mm-green": "#22c55e",
+      "--mm-blue": "#3b82f6",
+      "--mm-warn": "#f59e0b",
+      "--mm-alert": "#ef4444",
+      "--mm-txt": "#0f172a",
+      "--mm-dim": "rgba(15,23,42,.6)",
+      "--mm-faint": "rgba(15,23,42,.4)",
+      "--mm-panel": "rgba(15,23,42,.03)",
+      "--mm-border": "rgba(15,23,42,.08)",
+      "--mm-radius": "16px",
+      "--mm-radius-sm": "10px",
+      "--mm-shadow": "0 1px 3px rgba(0,0,0,.04)",
+      "--mm-glow-opacity": "0",
+    },
+    lightVars: {
+      "--mm-bg": "#ffffff",
+      "--mm-txt": "#0f172a",
+      "--mm-dim": "rgba(15,23,42,.6)",
+      "--mm-faint": "rgba(15,23,42,.4)",
+      "--mm-panel": "rgba(15,23,42,.03)",
+      "--mm-border": "rgba(15,23,42,.08)",
+      "--mm-green": "#22c55e",
+      "--mm-blue": "#3b82f6",
+      "--mm-warn": "#f59e0b",
+      "--mm-alert": "#ef4444",
+    },
+  },
+  modern: {
+    name: "Modern",
+    vars: {
+      "--mm-bg": "linear-gradient(145deg,#1e293b 0%,#0f172a 100%)",
+      "--mm-green": "#4ade80",
+      "--mm-blue": "#60a5fa",
+      "--mm-warn": "#fbbf24",
+      "--mm-alert": "#f87171",
+      "--mm-txt": "#f8fafc",
+      "--mm-dim": "rgba(248,250,252,.6)",
+      "--mm-faint": "rgba(248,250,252,.35)",
+      "--mm-panel": "rgba(255,255,255,.06)",
+      "--mm-border": "rgba(255,255,255,.1)",
+      "--mm-radius": "20px",
+      "--mm-radius-sm": "14px",
+      "--mm-shadow": "0 8px 32px rgba(0,0,0,.24), inset 0 1px 0 rgba(255,255,255,.06)",
+      "--mm-glow-opacity": "0.7",
+    },
+    lightVars: {
+      "--mm-bg": "linear-gradient(145deg,#f8fafc 0%,#e2e8f0 100%)",
+      "--mm-txt": "#1e293b",
+      "--mm-dim": "rgba(30,41,59,.6)",
+      "--mm-faint": "rgba(30,41,59,.4)",
+      "--mm-panel": "rgba(255,255,255,.5)",
+      "--mm-border": "rgba(30,41,59,.12)",
+      "--mm-green": "#16a34a",
+      "--mm-blue": "#2563eb",
+      "--mm-warn": "#d97706",
+      "--mm-alert": "#dc2626",
+      "--mm-shadow": "0 4px 24px rgba(0,0,0,.08), inset 0 1px 0 rgba(255,255,255,.8)",
+    },
+  },
+};
+
+const DEFAULT_THEME = "glass";
 
 const fireEvent = (node, type, detail = {}) => {
   const ev = new Event(type, { bubbles: true, cancelable: false, composed: true });
@@ -127,7 +230,7 @@ class MammotionCard extends HTMLElement {
 
   setConfig(config) {
     if (!config) throw new Error("Configuration invalide");
-    this._config = { name: "Tondeuse", hours: 4, points: 60, refresh: 300, show_battery_chart: true, show_phases: true, zones: [], ...config };
+    this._config = { name: "Tondeuse", hours: 4, points: 60, refresh: 300, show_battery_chart: true, show_phases: true, zones: [], theme: DEFAULT_THEME, ...config };
     this._built = false; this._history = null; this._fetchedAt = 0;
     if (this.shadowRoot) this.shadowRoot.innerHTML = "";
   }
@@ -156,6 +259,7 @@ class MammotionCard extends HTMLElement {
        s'adapte au lieu d'imposer son fond sombre. */
     const light = hass?.themes?.darkMode === false;
     this.classList.toggle("light", light);
+    this._applyTheme();
     this._update(); if (first) { this._fetchHistory(); this._fetchWeek(); } }
   connectedCallback() { this._tick = setInterval(() => { this._update(); if (Date.now() - this._fetchedAt > this._config.refresh * 1000) this._fetchHistory(); if (Date.now() - (this._weekAt || 0) > 3600000) { this._weekAt = Date.now(); this._fetchWeek(); } }, 20000); }
   disconnectedCallback() { if (this._tick) clearInterval(this._tick); this._tick = null; }
@@ -456,7 +560,17 @@ class MammotionCard extends HTMLElement {
     }
   }
 
+  _applyTheme() {
+    const themeName = this._config?.theme || DEFAULT_THEME;
+    const theme = THEMES[themeName] || THEMES[DEFAULT_THEME];
+    const isLight = this._hass?.themes?.darkMode === false;
+    const vars = isLight ? theme.lightVars : theme.vars;
+    Object.entries(vars).forEach(([k, v]) => this.style.setProperty(k, v));
+    this.dataset.theme = themeName;
+  }
+
   _build() {
+    this._applyTheme();
     this.shadowRoot.innerHTML = `<style>${MammotionCard.styles}</style>${this._template()}`;
     this._built = true;
     const $ = (s) => this.shadowRoot.querySelector(s); const e = this._els; const c = this._config;
@@ -487,9 +601,9 @@ class MammotionCard extends HTMLElement {
       <div class="mh"><div class="ms"><span class="md"></span><span class="nm"></span> · <b>—</b></div><div class="mk"></div></div>
       <div class="errw hidden"><svg viewBox="0 0 24 24">${I.alert}</svg><span></span></div>
       <div class="mstage"><svg class="dr" viewBox="0 0 180 180">
-        <circle cx="90" cy="90" r="82" fill="none" stroke="rgba(255,255,255,.07)" stroke-width="8"/>
-        <circle class="rp" cx="90" cy="90" r="82" fill="none" stroke="${COL.progress}" stroke-width="8" stroke-linecap="round" transform="rotate(-90 90 90)"/>
-        <circle cx="90" cy="90" r="66" fill="none" stroke="rgba(255,255,255,.07)" stroke-width="5"/>
+        <circle cx="90" cy="90" r="82" fill="none" stroke="rgba(128,128,128,.14)" stroke-width="8"/>
+        <circle class="rp" cx="90" cy="90" r="82" fill="none" stroke="var(--mm-green)" stroke-width="8" stroke-linecap="round" transform="rotate(-90 90 90)"/>
+        <circle cx="90" cy="90" r="66" fill="none" stroke="rgba(128,128,128,.14)" stroke-width="5"/>
         <circle class="rb" cx="90" cy="90" r="66" fill="none" stroke="${COL.battery}" stroke-width="5" stroke-linecap="round" opacity=".75" transform="rotate(-90 90 90)"/>
       </svg><div class="mc"><svg class="mi" viewBox="0 0 24 24">${I.mower}</svg><div class="mw">—</div><div class="msb">—</div></div></div>
       <div class="mlg"></div>
@@ -832,18 +946,18 @@ class MammotionCard extends HTMLElement {
 }
 
 MammotionCard.styles = `
-/* Thème : suit HA quand il est clair, reste sombre sinon. Les rgba
-   blancs deviennent des variables pour ne pas casser en clair. */
+/* Les variables de thème sont définies dynamiquement par _applyTheme()
+   via this.style.setProperty(). Les valeurs ci-dessous sont des fallbacks
+   pour le thème glass sombre. */
 :host{--mm-bg:#12151c;--mm-green:#c9f0a8;--mm-blue:#7fb3ff;--mm-warn:#ffc76b;--mm-alert:#ff6b5c;
   --mm-txt:#eef1f6;--mm-dim:rgba(255,255,255,.5);--mm-faint:rgba(255,255,255,.3);
-  --mm-panel:rgba(255,255,255,.04);--mm-border:rgba(255,255,255,.07);display:block;}
-:host(.light){--mm-bg:var(--card-background-color,#fff);--mm-txt:#1c1f26;--mm-dim:rgba(20,24,32,.55);
-  --mm-faint:rgba(20,24,32,.38);--mm-panel:rgba(20,24,32,.045);--mm-border:rgba(20,24,32,.10);
-  --mm-green:#3e7d1f;--mm-blue:#2f6bd8;--mm-warn:#b07818;--mm-alert:#c0392b;}
+  --mm-panel:rgba(255,255,255,.04);--mm-border:rgba(255,255,255,.07);
+  --mm-radius:26px;--mm-radius-sm:13px;--mm-shadow:none;--mm-glow-opacity:1;display:block;}
 *{box-sizing:border-box;}
-ha-card{border-radius:var(--ha-card-border-radius,26px);padding:20px 18px 16px;position:relative;overflow:hidden;border:1px solid var(--mm-border);background:var(--mm-bg);color:var(--mm-txt);font-family:var(--primary-font-family,"Inter","Segoe UI",Roboto,sans-serif);transition:border-color .35s;}
+ha-card{border-radius:var(--mm-radius,var(--ha-card-border-radius,26px));padding:20px 18px 16px;position:relative;overflow:hidden;border:1px solid var(--mm-border);background:var(--mm-bg);color:var(--mm-txt);font-family:var(--primary-font-family,"Inter","Segoe UI",Roboto,sans-serif);transition:border-color .35s,background .35s;box-shadow:var(--mm-shadow);}
 ha-card::after{content:"";position:absolute;left:20px;right:20px;top:0;height:1px;background:linear-gradient(90deg,transparent,var(--mm-border),transparent);}
-.glow{position:absolute;inset:0;pointer-events:none;transition:.5s;background:radial-gradient(85% 50% at 50% 6%,rgba(201,240,168,.14),transparent 62%);}
+.glow{position:absolute;inset:0;pointer-events:none;transition:.5s;opacity:var(--mm-glow-opacity,1);background:radial-gradient(85% 50% at 50% 6%,rgba(201,240,168,.14),transparent 62%);}
+:host([data-theme="minimal"]) .glow{display:none;}
 .m-docked .glow,.m-returning .glow{background:radial-gradient(85% 50% at 50% 6%,rgba(127,179,255,.13),transparent 62%);}
 .m-paused .glow{background:radial-gradient(85% 50% at 50% 6%,rgba(255,199,107,.13),transparent 62%);}
 .m-error{border-color:rgba(255,107,92,.38);}
@@ -1004,6 +1118,45 @@ ha-card::after{content:"";position:absolute;left:20px;right:20px;top:0;height:1p
 .sf .left i{width:5px;height:5px;border-radius:50%;background:var(--mm-green);flex-shrink:0;}
 .sf .left i.warn{background:var(--mm-alert);}
 .sf .right{text-align:right;font-variant-numeric:tabular-nums;flex-shrink:0;}
+
+/* ------------------------------------------------------------------ */
+/* Variantes par thème                                                  */
+/* ------------------------------------------------------------------ */
+
+/* MINIMAL : plat, aéré, bordures fines, pas de glow */
+:host([data-theme="minimal"]) ha-card{padding:24px 20px 18px;border-width:1px;}
+:host([data-theme="minimal"]) .mstage{margin-top:24px;}
+:host([data-theme="minimal"]) .segw{border-radius:12px;padding:3px;background:transparent;border-style:dashed;}
+:host([data-theme="minimal"]) .pill{border-radius:9px;box-shadow:none;background:var(--mm-green);opacity:.12;}
+:host([data-theme="minimal"]) .sgi.on span{color:var(--mm-green);}
+:host([data-theme="minimal"]) .bc4{background:transparent;border-style:dashed;}
+:host([data-theme="minimal"]) .acc{background:transparent;border-style:dashed;}
+:host([data-theme="minimal"]) .gc{background:transparent;border-style:dashed;}
+:host([data-theme="minimal"]) .ctl-slider{height:3px;}
+:host([data-theme="minimal"]) .ctl-slider::-webkit-slider-thumb{width:14px;height:14px;border-width:2px;box-shadow:none;}
+:host([data-theme="minimal"]) .eb{border-radius:9px;border-style:dashed;}
+:host([data-theme="minimal"]) .errw{border-radius:9px;border-style:dashed;}
+:host([data-theme="minimal"]) .cam-slot{border-radius:9px;}
+:host([data-theme="minimal"]) .wb{border-radius:3px;}
+:host([data-theme="minimal"]) .zb i{border-radius:2px;}
+:host([data-theme="minimal"]) .mw{font-weight:300;letter-spacing:-1px;}
+:host([data-theme="minimal"]) .k{letter-spacing:1.5px;font-weight:500;}
+
+/* MODERN : gradients, ombres portées, glassmorphism renforcé */
+:host([data-theme="modern"]) ha-card{padding:22px 20px 18px;box-shadow:var(--mm-shadow);}
+:host([data-theme="modern"]) ha-card::before{content:"";position:absolute;inset:0;border-radius:inherit;padding:1px;background:linear-gradient(135deg,rgba(255,255,255,.15),transparent 40%,transparent 60%,rgba(255,255,255,.08));-webkit-mask:linear-gradient(#fff 0 0) content-box,linear-gradient(#fff 0 0);-webkit-mask-composite:xor;mask-composite:exclude;pointer-events:none;}
+:host([data-theme="modern"]) .segw{background:rgba(255,255,255,.03);border-color:rgba(255,255,255,.08);backdrop-filter:blur(8px);}
+:host([data-theme="modern"]) .pill{background:linear-gradient(135deg,var(--mm-panel),rgba(255,255,255,.08));box-shadow:0 4px 20px rgba(0,0,0,.25),inset 0 1px 0 rgba(255,255,255,.1);}
+:host([data-theme="modern"]) .bc4{background:rgba(255,255,255,.04);border-color:rgba(255,255,255,.08);backdrop-filter:blur(4px);}
+:host([data-theme="modern"]) .acc{background:rgba(255,255,255,.04);border-color:rgba(255,255,255,.08);backdrop-filter:blur(4px);}
+:host([data-theme="modern"]) .gc{background:rgba(255,255,255,.04);border-color:rgba(255,255,255,.06);}
+:host([data-theme="modern"]) .eb{background:rgba(255,255,255,.05);border-color:rgba(255,255,255,.1);backdrop-filter:blur(4px);}
+:host([data-theme="modern"]) .eb:hover{background:rgba(255,255,255,.12);}
+:host([data-theme="modern"]) .ctl-slider{height:5px;}
+:host([data-theme="modern"]) .ctl-slider::-webkit-slider-thumb{width:18px;height:18px;box-shadow:0 2px 10px rgba(0,0,0,.35);}
+:host([data-theme="modern"]) .m-docked .glow{background:radial-gradient(85% 50% at 50% 6%,rgba(96,165,250,.18),transparent 62%);}
+:host([data-theme="modern"]) .m-paused .glow{background:radial-gradient(85% 50% at 50% 6%,rgba(251,191,36,.18),transparent 62%);}
+:host([data-theme="modern"]) .m-error .glow{background:radial-gradient(88% 55% at 50% 6%,rgba(248,113,113,.28),transparent 62%);}
 `;
 
 
@@ -1027,7 +1180,7 @@ const FLAT_KEYS = [
   "wifi_signal","cellular_signal","bluetooth_signal","firmware",
   "bluetooth_switch","cloud_switch","led_switch","voice_switch","auto_update_switch",
   "activity_1_button","activity_2_button","activity_3_button",
-  "hours","points","refresh","show_battery_chart","show_phases",
+  "hours","points","refresh","show_battery_chart","show_phases","theme",
 ];
 const MANAGED_KEYS = [...FLAT_KEYS, "type", "zones", "activity_1_label", "activity_2_label", "activity_3_label"];
 
@@ -1094,6 +1247,7 @@ const LABELS = {
   task_path: "Tâche en cours (chemin)",
   hours: "Fenêtre d'historique", points: "Échantillons", refresh: "Relecture",
   show_battery_chart: "Afficher la courbe de batterie", show_phases: "Afficher les phases",
+  theme: "Design de la carte",
 };
 
 const HELPERS = {
@@ -1218,6 +1372,15 @@ const SCHEMA = [
     type: "expandable", name: "", title: "Affichage", icon: "mdi:tune",
     schema: [
       {
+        name: "theme",
+        selector: {
+          select: {
+            options: Object.entries(THEMES).map(([value, t]) => ({ value, label: t.name })),
+            mode: "dropdown",
+          },
+        },
+      },
+      {
         type: "grid", name: "",
         schema: [
           { name: "hours", selector: { number: { min: 1, max: 72, mode: "box", unit_of_measurement: "h" } } },
@@ -1254,12 +1417,13 @@ class MammotionCardEditor extends HTMLElement {
       return;
     }
     if (!this._form) {
-      this.shadowRoot.innerHTML = `<style>${MammotionCardEditor.styles}</style><div class="wrap"></div><div class="note"></div>`;
+      this.shadowRoot.innerHTML = `<style>${MammotionCardEditor.styles}</style><div class="theme-preview"></div><div class="wrap"></div><div class="note"></div>`;
       this._form = document.createElement("ha-form");
       this._form.computeLabel = (s) => LABELS[s.name] || s.name;
       this._form.computeHelper = (s) => HELPERS[s.name] || "";
-      this._form.addEventListener("value-changed", (ev) => { ev.stopPropagation(); fireEvent(this, "config-changed", { config: this._merge(ev.detail.value) }); });
+      this._form.addEventListener("value-changed", (ev) => { ev.stopPropagation(); this._renderThemePreview(ev.detail.value?.theme); fireEvent(this, "config-changed", { config: this._merge(ev.detail.value) }); });
       this.shadowRoot.querySelector(".wrap").appendChild(this._form);
+      this._renderThemePreview(this._config?.theme);
     }
     this._form.hass = this._hass; this._form.schema = SCHEMA; this._form.data = this._data();
     const extra = this._unmanaged();
@@ -1267,8 +1431,43 @@ class MammotionCardEditor extends HTMLElement {
     if (extra.length) { note.innerHTML = `<div class="keep">Conservé sans être éditable ici : <b></b>.</div>`; note.querySelector("b").textContent = extra.join(", "); }
     else note.innerHTML = "";
   }
+
+  _renderThemePreview(selected) {
+    const host = this.shadowRoot?.querySelector(".theme-preview");
+    if (!host) return;
+    const cur = selected || this._config?.theme || DEFAULT_THEME;
+    host.innerHTML = `<div class="tp-label">Aperçu rapide</div><div class="tp-row">${
+      Object.entries(THEMES).map(([key, t]) => {
+        const v = t.vars;
+        const on = key === cur;
+        return `<div class="tp${on ? " on" : ""}" data-t="${key}" title="${esc(t.name)}">
+          <span class="tp-dot" style="background:${v["--mm-green"]}"></span>
+          <span class="tp-dot" style="background:${v["--mm-blue"]}"></span>
+          <span class="tp-dot" style="background:${v["--mm-warn"]}"></span>
+          <span class="tp-name">${esc(t.name.split(" ")[0])}</span>
+        </div>`;
+      }).join("")
+    }</div>`;
+    host.querySelectorAll(".tp").forEach((el) => el.addEventListener("click", () => {
+      const t = el.dataset.t;
+      const newData = { ...this._data(), theme: t };
+      this._form.data = newData;
+      this._renderThemePreview(t);
+      fireEvent(this, "config-changed", { config: this._merge(newData) });
+    }));
+  }
 }
-MammotionCardEditor.styles = `:host{display:block;}.warn{padding:10px;border-radius:8px;background:var(--warning-color,#dfb37a);color:#1c1c1c;font-size:12px;}.keep{margin-top:12px;padding:10px;border-radius:8px;background:rgba(143,176,201,.16);border:1px solid rgba(143,176,201,.4);font-size:12px;}`;
+MammotionCardEditor.styles = `:host{display:block;}.warn{padding:10px;border-radius:8px;background:var(--warning-color,#dfb37a);color:#1c1c1c;font-size:12px;}.keep{margin-top:12px;padding:10px;border-radius:8px;background:rgba(143,176,201,.16);border:1px solid rgba(143,176,201,.4);font-size:12px;}
+
+/* Apercu rapide des themes dans l'editeur */
+.tp-label{font-size:11px;font-weight:600;color:var(--secondary-text-color,#727272);margin-bottom:8px;letter-spacing:.5px;text-transform:uppercase;}
+.tp-row{display:flex;gap:10px;margin-bottom:16px;}
+.tp{flex:1;display:flex;align-items:center;gap:6px;padding:10px 12px;border-radius:10px;border:2px solid var(--divider-color,#e0e0e0);cursor:pointer;transition:.15s;background:var(--card-background-color,#fff);}
+.tp:hover{border-color:var(--primary-color,#03a9f4);}
+.tp.on{border-color:var(--primary-color,#03a9f4);background:rgba(3,169,244,.06);}
+.tp-dot{width:12px;height:12px;border-radius:50%;flex-shrink:0;}
+.tp-name{font-size:12px;font-weight:600;color:var(--primary-text-color,#212121);margin-left:auto;}
+`;
 
 if (!customElements.get("mammotion-card-editor")) customElements.define("mammotion-card-editor", MammotionCardEditor);
 
