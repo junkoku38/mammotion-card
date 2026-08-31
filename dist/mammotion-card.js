@@ -7,7 +7,7 @@
  * https://github.com/junkoku38/mammotion-card
  */
 
-const CARD_VERSION = "1.3.1";
+const CARD_VERSION = "1.4.0";
 
 console.info(
   `%c MAMMOTION-CARD %c v${CARD_VERSION} `,
@@ -120,7 +120,49 @@ class MammotionCard extends HTMLElement {
   _dur(min) { if (min == null || Number.isNaN(min)) return "—"; const m = Math.max(0, Math.round(min)); const h = Math.floor(m / 60); const r = m % 60; if (h === 0) return `${r} min`; return r === 0 ? `${h} h` : `${h} h ${String(r).padStart(2, "0")}`; }
 
   _mowerState() { const c = this._config; const s = this._st(c.mower) || this._st(c.state_entity); return s ? norm(s.state) : ""; }
-  _mode() { const v = this._mowerState(); if (ERR_WORDS.some((w) => v.includes(w))) return "error"; if (PAUSE_WORDS.some((w) => v.includes(w))) return "paused"; if (RETURN_WORDS.some((w) => v.includes(w))) return "returning"; if (MOW_WORDS.some((w) => v.includes(w))) return "mowing"; if (DOCK_WORDS.some((w) => v.includes(w))) return "docked"; return "docked"; }
+  _mode() {
+    const v = this._mowerState();
+    /* Une erreur code non nul prime sur l'état publishé : Mammotion laisse
+       parfois l'état sur « paused » pendant une faute bloquante (caméra
+       masquée, coincidence...). Le code est la vérité, l'état un souhait. */
+    const errCode = this._txt(this._config.error_code, null);
+    const errActive = errCode && !["0","none","no_error","unknown","—","null",""].includes(norm(errCode));
+    if (errActive || ERR_WORDS.some((w) => v.includes(w))) return "error";
+    if (PAUSE_WORDS.some((w) => v.includes(w))) return "paused";
+    if (RETURN_WORDS.some((w) => v.includes(w))) return "returning";
+    if (MOW_WORDS.some((w) => v.includes(w))) return "mowing";
+    if (DOCK_WORDS.some((w) => v.includes(w))) return "docked";
+    return "docked";
+  }
+  /* Session : temps écoulé / temps total, quand l'intégration les publie.
+     La progression terrain (progress) reste au premier plan, mais la
+     session répond à « quand est-ce que ça finit, réellement ? ». */
+  _sessionRatio() {
+    const c = this._config;
+    const el = this._num(c.elapsed_time), tot = this._num(c.total_time);
+    if (el == null || tot == null || tot <= 0) return null;
+    return Math.max(0, Math.min(1, el / tot));
+  }
+  /* Erreur affichable : texte nettoyé (Mammotion préfixe « common: ») et
+     daté si l'heure est publiée — « il y a 2 j » est plus utile qu'un
+     horodatage brut. */
+  _errorText() {
+    const c = this._config;
+    let txt = this._txt(c.error, null);
+    if (txt) txt = String(txt).replace(/^common:\s*/i, "").replace(/_/g, " ").trim();
+    const t = this._st(c.error_time)?.state;
+    let when = "";
+    if (t && !isDead(t)) {
+      const ts = new Date(t).getTime();
+      if (!Number.isNaN(ts)) {
+        const d = (Date.now() - ts) / 86400000;
+        when = d < 1 ? "aujourd'hui" : d < 2 ? "hier" : `il y a ${Math.round(d)} j`;
+      }
+    }
+    if (txt && when) return `${txt} (${when})`;
+    return txt || when || null;
+  }
+  _ago(t) { if (!t || isDead(t)) return null; const ts = new Date(t).getTime(); if (Number.isNaN(ts)) return null; const d = (Date.now() - ts) / 86400000; return d < 1 ? "aujourd'hui" : d < 2 ? "hier" : `il y a ${Math.round(d)} j`; }
   _progress() { const c = this._config; let p = this._num(c.progress); if (p != null) return Math.max(0, Math.min(1, p > 1 ? p / 100 : p)); return null; }
   _remainingMinutes() { const c = this._config; const s = this._st(c.remaining_time); if (!s || isDead(s.state)) return null; const raw = s.state; if (/\d{4}-\d{2}-\d{2}T/.test(raw)) { const d = (new Date(raw).getTime() - Date.now()) / 60000; return d > 0 ? d : 0; } const v = Number(raw); if (Number.isNaN(v)) return null; return v; }
 
@@ -184,7 +226,7 @@ class MammotionCard extends HTMLElement {
     e.chartMeta = $(".chartw .est"); e.chartSlot = $(".chartw .slot");
     e.zones = $(".zrs"); e.zonesMeta = $(".zonesw .est"); e.cells = $(".bg4");
     e.footLeft = $(".sf .left"); e.footRight = $(".sf .right");
-    e.camSlot = $(".cam-slot"); e.extraBtns = $(".extra-btns");
+    e.camSlot = $(".cam-slot"); e.extraBtns = $(".extra-btns"); e.actBtns = $(".activity-btns");
     e.mowGrid = this.shadowRoot.querySelector("#mow-grid");
     e.connGrid = this.shadowRoot.querySelector("#conn-grid");
     e.swList = this.shadowRoot.querySelector("#sw-list");
@@ -209,6 +251,9 @@ class MammotionCard extends HTMLElement {
         <div class="sgi" data-a="dock"><span>Base</span></div>
       </div>
       ${c.show_phases ? `<div class="phw"><div class="slot"></div><div class="phr"></div></div>` : ""}
+      <div class="cam-slot"></div>
+      <div class="extra-btns hidden"></div>
+      <div class="activity-btns hidden"></div>
       ${c.battery && c.show_battery_chart ? `<div class="chartw"><div class="lbl"><span class="k">Batterie · ${Number(c.hours)||4} h</span><span class="est"></span></div><div class="slot"></div></div>` : ""}
       ${c.zones.length ? `<div class="zonesw"><div class="lbl"><span class="k">Zones</span><span class="est"></span></div><div class="zrs"></div></div>` : ""}
 
@@ -283,10 +328,11 @@ class MammotionCard extends HTMLElement {
   _update() {
     const c = this._config, e = this._els; if (!this._hass || !this._built) return;
     const mode = this._mode(), progress = this._progress(), batt = this._num(c.battery), rem = this._remainingMinutes();
+    const charging = this._s(c.charging) === "on";
     e.card.className = `m-${mode}`;
     const dotColor = mode === "error" ? COL.alert : mode === "mowing" ? COL.progress : mode === "paused" ? COL.warn : COL.battery;
     e.dot.style.background = dotColor; e.dot.style.boxShadow = `0 0 8px ${dotColor}99`;
-    const labels = { mowing: "Tonte", paused: "En pause", returning: "Retour base", docked: "À la base", error: "Erreur" };
+    const labels = { mowing: "Tonte", paused: "En pause", returning: "Retour base", docked: charging ? "En charge" : "À la base", error: "Erreur" };
     e.name.textContent = c.name; e.state.textContent = labels[mode];
     const chips = []; const rtk = this._txt(c.rtk_status, null); if (rtk) chips.push(rtk);
     const sat = this._num(c.satellites); if (sat != null) chips.push(`${Math.round(sat)} sat`);
@@ -299,7 +345,15 @@ class MammotionCard extends HTMLElement {
     else if (mode === "mowing" && progress != null) e.big.innerHTML = `${Math.round(progress * 100)}<span>%</span>`;
     else if (batt != null) e.big.innerHTML = `${Math.round(batt)}<span>%</span>`;
     else e.big.textContent = labels[mode];
-    const sub = []; if (progress != null && mode === "mowing") sub.push(`${Math.round(progress * 100)} %`);
+    const sub = [];
+    if (progress != null && mode === "mowing") sub.push(`${Math.round(progress * 100)} %`);
+    /* Zone en cours : le numéro nu n'est pas parlant, on le préfixe. */
+    const zone = this._num(c.current_zone);
+    if (zone != null && (mode === "mowing" || mode === "returning" || mode === "paused")) sub.push(`Zone ${Math.round(zone)}`);
+    /* Session : écoulé/total répond à « quand ça finit », complément de la
+       progression terrain qui mesure les mètres, pas le temps. */
+    const sr = this._sessionRatio();
+    if (sr != null && sr > 0) sub.push(`session ${Math.round(sr * 100)} %`);
     const area = this._num(c.area); if (area != null) sub.push(`${this._fmt(area, 0)} m²`);
     e.bigSub.textContent = sub.join(" · ") || "";
     const finish = rem != null && rem > 0 ? new Date(Date.now() + rem * 60000) : null;
@@ -318,15 +372,20 @@ class MammotionCard extends HTMLElement {
       { k: "Total", v: this._num(c.total_work_time) != null ? `${this._fmt(this._num(c.total_work_time), 0)} h` : "—" },
     ];
     e.cells.innerHTML = cells.map((x) => `<div class="bc4"><span>${esc(x.k)}</span><b>${esc(x.v)}</b></div>`).join("");
-    const err = this._txt(c.error, null);
     const errCode = this._txt(c.error_code, null);
-    // Une erreur n'est active que si le mode est error, ou si un code d'erreur
-    // numerique non nul est present. Le texte de derniere_erreur reste stocke
-    // meme apres resolution, donc il ne peut pas seul indiquer une erreur active.
+    /* Une erreur n'est active que si le mode est error, ou si un code d'erreur
+       numerique non nul est present. Le texte de derniere_erreur reste stocke
+       meme apres resolution, donc il ne peut pas seul indiquer une erreur active. */
     const hasErr = mode === "error" || (errCode && !["0","none","no_error","unknown","—","null"].includes(norm(errCode)));
-    e.footLeft.innerHTML = `<i class="${hasErr ? "warn" : ""}"></i>${hasErr ? esc(err || errCode || "Erreur active") : "Aucune erreur"}`;
+    e.footLeft.innerHTML = `<i class="${hasErr ? "warn" : ""}"></i>${hasErr ? esc(this._errorText() || errCode || "Erreur active") : "Aucune erreur"}`;
     const wear = this._num(c.blade_wear), km = this._num(c.odometer);
-    e.footRight.textContent = km != null ? `${this._fmt(km, 0)} km` : wear != null ? `Lames · ${this._fmt(wear, 0)} %` : "";
+    /* Lame : les heures d'utilisation sont plus parlantes qu'un pourcentage
+       de Mammotion. 60 h est la durée de vie constructeur typique. */
+    const bladeH = this._num(c.blade_hours);
+    const wearBits = [];
+    if (bladeH != null) wearBits.push(`Lame ${this._fmt(bladeH, 1)} h${bladeH >= 60 ? " ⚠" : ""}`);
+    else if (wear != null) wearBits.push(`Lames · ${this._fmt(wear, 0)} %`);
+    if (km != null) wearBits.unshift(`${this._fmt(km, 0)} km`);
     if (!this._history) this._renderChart();
 
 
@@ -363,6 +422,10 @@ class MammotionCard extends HTMLElement {
       if (c.wifi_signal) items.push(cell("Wi-Fi", fmtNum(c.wifi_signal, " dBm")));
       if (c.cellular_signal) items.push(cell("4G", fmtNum(c.cellular_signal, " dBm")));
       if (c.bluetooth_signal) items.push(cell("BT", fmtNum(c.bluetooth_signal, " dBm")));
+      if (c.idle_hours) {
+        const idle = this._txt(c.idle_hours, null);
+        if (idle && idle !== "—") items.push(cell("Non travaillé", idle));
+      }
       if (c.firmware) {
         const f = this._st(c.firmware);
         const pending = f?.state === "on";
@@ -409,6 +472,9 @@ class MammotionCard extends HTMLElement {
       if (c.edge_button) btns.push({ label: "Bordure", id: c.edge_button });
       if (c.leave_dock_button) btns.push({ label: "Quitter la base", id: c.leave_dock_button });
       if (c.restart_button) btns.push({ label: "Redémarrer", id: c.restart_button, ghost: true });
+      if (c.sync_map_button) btns.push({ label: "Synchro cartes", id: c.sync_map_button, ghost: true });
+      if (c.sync_schedule_button) btns.push({ label: "Synchro plannings", id: c.sync_schedule_button, ghost: true });
+      if (c.sync_rtk_button) btns.push({ label: "Synchro RTK", id: c.sync_rtk_button, ghost: true });
       this._els.extraBtns.innerHTML = btns.map((b, i) =>
         `<div class="eb${b.ghost ? " ghost" : ""}" data-i="${i}">${esc(b.label)}</div>`
       ).join("");
@@ -423,11 +489,34 @@ class MammotionCard extends HTMLElement {
       });
     }
 
+    /* Boutons d'activités : lancement direct des tontes pré-configurées
+       (espacement 20, 25...) — le raccourci le plus utilisé au quotidien
+       après Démarrer/Pause. */
+    if (this._els.actBtns) {
+      const acts = [];
+      if (c.activity_1_button) acts.push({ label: c.activity_1_label || "Activité 1", id: c.activity_1_button });
+      if (c.activity_2_button) acts.push({ label: c.activity_2_label || "Activité 2", id: c.activity_2_button });
+      if (c.activity_3_button) acts.push({ label: c.activity_3_label || "Activité 3", id: c.activity_3_button });
+      this._els.actBtns.innerHTML = acts.map((b, i) =>
+        `<div class="eb act" data-i="${i}">${esc(b.label)}</div>`
+      ).join("");
+      this._els.actBtns.classList.toggle("hidden", !acts.length);
+      this._els.actBtns.querySelectorAll(".eb").forEach((el) => {
+        el.addEventListener("click", (ev) => {
+          ev.stopPropagation();
+          const b = acts[Number(el.dataset.i)];
+          const d = domainOf(b.id);
+          if (d === "button" || d === "input_button") this._hass.callService(d, "press", { entity_id: b.id });
+        });
+      });
+    }
+
+    /* Heures non travaillées : déjà intégré dans la section connexion. */
+
     /* Cycles et temps total dans le pied */
     const cycles = this._num(c.battery_cycles);
     const workTime = this._num(c.total_work_time);
-    const footBits = [];
-    if (km != null) footBits.push(`${this._fmt(km, 0)} km`);
+    const footBits = [...wearBits];
     if (workTime != null) footBits.push(`${this._fmt(workTime, 0)} h travail`);
     if (cycles != null) footBits.push(`${Math.round(cycles)} cycles`);
     e.footRight.textContent = footBits.join(" · ");
@@ -503,10 +592,14 @@ ha-card::after{content:"";position:absolute;left:20px;right:20px;top:0;height:1p
 
 .extra-btns{display:flex;gap:7px;margin-top:14px;position:relative;z-index:1;}
 .extra-btns.hidden{display:none;}
+.activity-btns{display:flex;gap:7px;margin-top:14px;position:relative;z-index:1;}
+.activity-btns.hidden{display:none;}
 .eb{flex:1;text-align:center;font-size:11px;font-weight:600;padding:10px 0;border-radius:12px;
   background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.10);color:rgba(255,255,255,.72);cursor:pointer;transition:.15s;}
 .eb:hover{background:rgba(255,255,255,.1);}
 .eb.ghost{background:rgba(255,107,92,.10);border-color:rgba(255,107,92,.28);color:#ffb3aa;}
+.activity-btns .eb{background:rgba(201,240,168,.08);border-color:rgba(201,240,168,.22);color:var(--mm-green);}
+.activity-btns .eb:hover{background:rgba(201,240,168,.16);}
 
 
 /* Sections repliables */
@@ -552,27 +645,33 @@ ha-card::after{content:"";position:absolute;left:20px;right:20px;top:0;height:1p
 /* ------------------------------------------------------------------ */
 
 const FLAT_KEYS = [
-  "name","mower","battery","progress","remaining_time","session_duration",
-  "area","blade_height","satellites","rtk_status","error","error_code",
-  "odometer","blade_wear","speed","start_button","pause_button","dock_button",
+  "name","mower","state_entity","battery","progress","remaining_time","session_duration",
+  "elapsed_time","total_time","area","current_zone","charging","blade_height","satellites","rtk_status","error","error_code","error_time",
+  "odometer","blade_wear","blade_hours","start_button","pause_button","dock_button",
   "camera","restart_button","edge_button","leave_dock_button","battery_cycles","total_work_time",
+  "sync_map_button","sync_schedule_button","sync_rtk_button","idle_hours",
   "speed","spacing","angle","trajectory_mode","mowing_order","obstacle_detection",
   "wildlife_safety","rain_detection_mowing","rain_detection_during",
   "activity_mode","position_type","satellites_l1","satellites_l2",
   "wifi_signal","cellular_signal","bluetooth_signal","firmware",
   "bluetooth_switch","cloud_switch","led_switch","voice_switch","auto_update_switch",
+  "activity_1_button","activity_2_button","activity_3_button",
   "hours","points","refresh","show_battery_chart","show_phases",
 ];
-const MANAGED_KEYS = [...FLAT_KEYS, "type", "zones"];
+const MANAGED_KEYS = [...FLAT_KEYS, "type", "zones", "activity_1_label", "activity_2_label", "activity_3_label"];
 
 const LABELS = {
-  name: "Nom", mower: "Tondeuse (lawn_mower)",
+  name: "Nom", mower: "Tondeuse (lawn_mower)", state_entity: "État (repli, si pas lawn_mower)",
   battery: "Batterie", progress: "Progression",
   remaining_time: "Temps restant", session_duration: "Durée de session",
-  area: "Surface en cours", blade_height: "Hauteur des lames",
+  elapsed_time: "Temps écoulé (session)", total_time: "Temps total (session)",
+  area: "Surface en cours", current_zone: "Zone en cours",
+  charging: "En charge (binary_sensor)",
   satellites: "Satellites", rtk_status: "Statut RTK",
   error: "Dernière erreur (texte)", error_code: "Code d'erreur (actif)",
-  odometer: "Kilométrage total", blade_wear: "Usure des lames", speed: "Vitesse",
+  error_time: "Heure de la dernière erreur",
+  odometer: "Kilométrage total", blade_wear: "Usure des lames",
+  blade_hours: "Heures d'utilisation de la lame",
   start_button: "Bouton Démarrer (repli)", pause_button: "Bouton Pause (repli)",
   dock_button: "Bouton Base (repli)",
   camera: "Caméra (flux live)",
@@ -581,6 +680,10 @@ const LABELS = {
   leave_dock_button: "Bouton Quitter la base",
   battery_cycles: "Cycles de batterie",
   total_work_time: "Temps de travail total",
+  sync_map_button: "Bouton Synchroniser les cartes",
+  sync_schedule_button: "Bouton Synchroniser les plannings",
+  sync_rtk_button: "Bouton Synchroniser RTK et base",
+  idle_hours: "Heures non travaillées (texte)",
   speed: "Vitesse de tonte", spacing: "Espacement des trajectoires",
   angle: "Angle de trajectoire", trajectory_mode: "Mode de trajectoire",
   mowing_order: "Ordre de tonte", obstacle_detection: "Détection d'obstacles",
@@ -593,6 +696,9 @@ const LABELS = {
   bluetooth_switch: "Bluetooth (switch)", cloud_switch: "Cloud (switch)",
   led_switch: "LED latérales (switch)", voice_switch: "Voix (switch)",
   auto_update_switch: "MAJ auto (switch)",
+  activity_1_button: "Bouton Activité 1",
+  activity_2_button: "Bouton Activité 2",
+  activity_3_button: "Bouton Activité 3",
   hours: "Fenêtre d'historique", points: "Échantillons", refresh: "Relecture",
   show_battery_chart: "Afficher la courbe de batterie", show_phases: "Afficher les phases",
 };
@@ -613,9 +719,12 @@ const SCHEMA = [
       { name: "battery", selector: { entity: { filter: [{ domain: "sensor", device_class: "battery" }] } } },
       { name: "progress", selector: { entity: { filter: [{ domain: "sensor" }] } } },
       { name: "remaining_time", selector: { entity: { filter: [{ domain: "sensor" }] } } },
+      { name: "elapsed_time", selector: { entity: { filter: [{ domain: "sensor" }] } } },
+      { name: "total_time", selector: { entity: { filter: [{ domain: "sensor" }] } } },
       { name: "session_duration", selector: { entity: { filter: [{ domain: "sensor" }] } } },
       { name: "area", selector: { entity: { filter: [{ domain: "sensor" }] } } },
-      { name: "blade_height", selector: { entity: { filter: [{ domain: "sensor" }] } } },
+      { name: "current_zone", selector: { entity: { filter: [{ domain: "sensor" }] } } },
+      { name: "charging", selector: { entity: { filter: [{ domain: "binary_sensor" }] } } },
       { name: "satellites", selector: { entity: { filter: [{ domain: "sensor" }] } } },
       { name: "rtk_status", selector: { entity: { filter: [{ domain: "sensor" }] } } },
     ],
@@ -639,14 +748,16 @@ const SCHEMA = [
     schema: [
       { name: "error", selector: { entity: { filter: [{ domain: "sensor" }] } } },
       { name: "error_code", selector: { entity: { filter: [{ domain: "sensor" }] } } },
+      { name: "error_time", selector: { entity: { filter: [{ domain: "sensor" }] } } },
       { name: "odometer", selector: { entity: { filter: [{ domain: "sensor" }] } } },
       { name: "blade_wear", selector: { entity: { filter: [{ domain: "sensor" }] } } },
-      { name: "speed", selector: { entity: { filter: [{ domain: "sensor" }] } } },
+      { name: "blade_hours", selector: { entity: { filter: [{ domain: "sensor" }] } } },
       { name: "battery_cycles", selector: { entity: { filter: [{ domain: "sensor" }] } } },
       { name: "total_work_time", selector: { entity: { filter: [{ domain: "sensor" }] } } },
     ],
   },
   { name: "camera", selector: { entity: { filter: [{ domain: "camera" }] } } },
+  { name: "state_entity", selector: { entity: { filter: [{ domain: ["sensor", "lawn_mower"] }] } } },
   {
     type: "expandable", name: "", title: "Connexion et positionnement", icon: "mdi:map-marker-radius",
     schema: [
@@ -657,6 +768,7 @@ const SCHEMA = [
       { name: "wifi_signal", selector: { entity: { filter: [{ domain: "sensor", device_class: "signal_strength" }] } } },
       { name: "cellular_signal", selector: { entity: { filter: [{ domain: "sensor", device_class: "signal_strength" }] } } },
       { name: "bluetooth_signal", selector: { entity: { filter: [{ domain: "sensor", device_class: "signal_strength" }] } } },
+      { name: "idle_hours", selector: { entity: { filter: [{ domain: "sensor" }] } } },
       { name: "firmware", selector: { entity: { filter: [{ domain: "update" }] } } },
     ],
   },
@@ -679,6 +791,12 @@ const SCHEMA = [
       { name: "edge_button", selector: { entity: { filter: [{ domain: "button" }] } } },
       { name: "leave_dock_button", selector: { entity: { filter: [{ domain: "button" }] } } },
       { name: "restart_button", selector: { entity: { filter: [{ domain: "button" }] } } },
+      { name: "activity_1_button", selector: { entity: { filter: [{ domain: "button" }] } } },
+      { name: "activity_2_button", selector: { entity: { filter: [{ domain: "button" }] } } },
+      { name: "activity_3_button", selector: { entity: { filter: [{ domain: "button" }] } } },
+      { name: "sync_map_button", selector: { entity: { filter: [{ domain: "button" }] } } },
+      { name: "sync_schedule_button", selector: { entity: { filter: [{ domain: "button" }] } } },
+      { name: "sync_rtk_button", selector: { entity: { filter: [{ domain: "button" }] } } },
     ],
   },
   {

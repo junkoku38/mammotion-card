@@ -2,5 +2,6 @@
   "name": "Mammotion Card",
   "render_readme": true,
   "filename": "mammotion-card.js",
-  "homeassistant": "2024.2.0"
+  "homeassistant": "2024.2.0",
+  "version": "1.4.0"
 }
