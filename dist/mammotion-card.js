@@ -7,7 +7,7 @@
  * https://github.com/junkoku38/mammotion-card
  */
 
-const CARD_VERSION = "3.1.0";
+const CARD_VERSION = "3.1.1";
 
 console.info(
   `%c MAMMOTION-CARD %c v${CARD_VERSION} `,
@@ -606,7 +606,7 @@ class MammotionCard extends HTMLElement {
     const $ = (s) => this.shadowRoot.querySelector(s); const e = this._els; const c = this._config;
     e.card = $("ha-card"); e.dot = $(".ms .md"); e.name = $(".ms .nm"); e.state = $(".ms b"); e.chips = $(".mk");
     e.errBanner = $(".errw"); e.errTxt = $(".errw span");
-    e.ringProg = $(".dr .rp"); e.ringBatt = $(".dr .rb"); e.big = $(".mw"); e.bigSub = $(".msb"); e.legend = $(".mlg");
+    e.ringProg = $(".dr .rp"); e.ringBatt = $(".dr .rb"); e.big = $(".mw"); e.legend = $(".mlg");
     e.segw = $(".segw"); e.phases = $(".phw"); e.pbSlot = $(".phw .slot"); e.phRow = $(".phr");
     e.chartMeta = $(".chartw .est"); e.chartSlot = $(".chartw .slot");
     e.weekSlot = $(".wslot"); e.weekMeta = $(".weekw .west");
@@ -635,7 +635,7 @@ class MammotionCard extends HTMLElement {
         <circle class="rp" cx="90" cy="90" r="82" fill="none" stroke-width="8" stroke-linecap="round" transform="rotate(-90 90 90)"/>
         <circle cx="90" cy="90" r="66" fill="none" class="ring-bg" stroke-width="5"/>
         <circle class="rb" cx="90" cy="90" r="66" fill="none" stroke-width="5" stroke-linecap="round" opacity=".75" transform="rotate(-90 90 90)"/>
-      </svg><div class="mc"><svg class="mi" viewBox="0 0 24 24">${I.mower}</svg><div class="mw">—</div><div class="msb">—</div></div></div>
+      </svg><div class="mc"><svg class="mi" viewBox="0 0 24 24">${I.mower}</svg><div class="mw">—</div></div></div>
       <div class="mlg"></div>
       <div class="segw"><div class="pill"></div>
         <div class="sgi" data-a="start"><span>Tondre</span></div>
@@ -769,7 +769,9 @@ class MammotionCard extends HTMLElement {
     const sr = this._sessionRatio();
     if (sr != null && sr > 0) sub.push(`session ${Math.round(sr * 100)} %`);
     const area = this._num(c.area); if (area != null) sub.push(`${this._fmt(area, 0)} m²`);
-    e.bigSub.textContent = sub.join(" · ") || "";
+    /* Le sub sort du cercle — la zone + session + surface font une seule
+       ligne trop longue pour 180px. On le descend dans la légende. */
+    e.legend.innerHTML = `${sub.length ? `<span class="mlg-sub">${esc(sub.join(" · "))}</span>` : ""}`;
     /* Légende des anneaux : chaque anneau a son libellé explicite —
        « 77 % tonte » au centre sans qualificatif prêtait à confusion
        avec la batterie. */
@@ -777,7 +779,10 @@ class MammotionCard extends HTMLElement {
     const battEnd = mode === "mowing" && batt != null && this._mowingMargin()
       ? Math.max(0, Math.round(batt - this._mowingMargin().rate * ((rem ?? 0) / 60)))
       : null;
-    e.legend.innerHTML = `<span><i style="background:${green}"></i>Tonte ${progress != null ? `${Math.round(progress * 100)} %` : "—"}</span><span><i style="background:${blue}"></i>Batterie ${batt != null ? `${Math.round(batt)} %` : "—"}${battEnd != null ? ` → ${battEnd} % fin` : ""}</span><span class="mr">${finish ? `fin ${this._hhmm(finish)}` : ""}</span>`;
+    /* Le sub sort du cercle : une ligne trop longue pour 180px. Il descend
+       dans la légende, sur sa propre ligne au-dessus des deux anneaux. */
+    const subLine = sub.length ? `<div class="mlg-sub">${esc(sub.join(" · "))}</div>` : "";
+    e.legend.innerHTML = `${subLine}<div class="mlg-row"><span><i style="background:${green}"></i>Tonte ${progress != null ? `${Math.round(progress * 100)} %` : "—"}</span><span><i style="background:${blue}"></i>Batterie ${batt != null ? `${Math.round(batt)} %` : "—"}${battEnd != null ? ` → ${battEnd} % fin` : ""}</span>${finish ? `<span class="mr">fin ${this._hhmm(finish)}</span>` : ""}</div>`;
     const activeSeg = mode === "mowing" ? 0 : mode === "paused" ? 1 : 2;
     /* Avec 4 segments (Annuler ajouté), la largeur de la pastille suit. */
     const segCount = this._els.segw ? this._els.segw.querySelectorAll(".sgi").length : 3;
@@ -1046,8 +1051,11 @@ ha-card::after{content:"";position:absolute;left:20px;right:20px;top:0;height:1p
 .m-error .mi{fill:var(--mm-alert);}
 .mw{font-size:38px;font-weight:200;letter-spacing:-2px;line-height:1;font-variant-numeric:tabular-nums;}
 .mw span{font-size:15px;font-weight:300;color:var(--mm-faint);margin:0 2px;letter-spacing:0;}
-.msb{font-size:10px;color:var(--mm-faint);font-variant-numeric:tabular-nums;}
-.mlg{display:flex;align-items:center;gap:12px;font-size:9px;color:var(--mm-faint);margin-top:12px;position:relative;z-index:1;}
+.mlg{display:flex;flex-direction:column;gap:4px;margin-top:12px;position:relative;z-index:1;}
+.mlg-sub{font-size:9.5px;color:var(--mm-dim);text-align:center;font-weight:500;letter-spacing:.2px;}
+.mlg .mlg-row{display:flex;align-items:center;gap:12px;font-size:9px;color:var(--mm-faint);}
+.mlg-row{line-height:1.4;}
+.mlg-sub, .mlg-row{min-width:0;}
 .mlg i{width:7px;height:7px;border-radius:50%;display:inline-block;margin-right:5px;}
 .mlg .mr{margin-left:auto;font-variant-numeric:tabular-nums;}
 .segw{position:relative;display:flex;margin-top:16px;padding:4px;border-radius:16px;background:var(--mm-panel);border:1px solid var(--mm-border);z-index:1;}
@@ -1209,8 +1217,6 @@ ha-card::after{content:"";position:absolute;left:20px;right:20px;top:0;height:1p
 /* Valeurs du centre plus sobres */
 :host([data-theme="carbon"]) .mw{font-size:34px;font-weight:300;letter-spacing:0;font-family:ui-monospace,"SF Mono","Cascadia Code","Roboto Mono",monospace;font-variant-numeric:tabular-nums;}
 :host([data-theme="carbon"]) .mw span{font-size:12px;font-weight:400;}
-:host([data-theme="carbon"]) .msb{font-size:10px;letter-spacing:0;}
-/* Légende */
 :host([data-theme="carbon"]) .mlg i{width:5px;height:5px;border-radius:50%;}
 :host([data-theme="carbon"]) .mlg span{font-family:ui-monospace,"SF Mono","Cascadia Code","Roboto Mono",monospace;font-variant-numeric:tabular-nums;}
 /* Contrôles segmentés : filets au lieu d'espaces, pas de coin arrondi */
