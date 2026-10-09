@@ -7,7 +7,7 @@
  * https://github.com/junkoku38/mammotion-card
  */
 
-const CARD_VERSION = "3.1.2";
+const CARD_VERSION = "3.1.3";
 
 console.info(
   `%c MAMMOTION-CARD %c v${CARD_VERSION} `,
@@ -210,12 +210,12 @@ async function ensureHaForm() {
 }
 
 class MammotionCard extends HTMLElement {
-  constructor() { super(); this.attachShadow({ mode: "open" }); this._built = false; this._els = {}; this._history = null; this._fetchedAt = 0; this._busy = false; this._tick = null; this._weekAt = 0; this._week = null; this._weekBusy = false; }
+  constructor() { super(); this.attachShadow({ mode: "open" }); this._built = false; this._els = {}; this._history = null; this._fetchedAt = 0; this._busy = false; this._tick = null; this._weekAt = 0; this._week = null; this._weekBusy = false; this._lastSig = null; this._ctlTouch = 0; }
 
   setConfig(config) {
     if (!config) throw new Error("Configuration invalide");
     this._config = { name: "Tondeuse", hours: 4, points: 60, refresh: 300, show_battery_chart: true, show_phases: true, zones: [], theme: DEFAULT_THEME, ...config };
-    this._built = false; this._history = null; this._fetchedAt = 0;
+    this._built = false; this._history = null; this._fetchedAt = 0; this._lastSig = null; this._ctlTouch = 0;
     if (this.shadowRoot) this.shadowRoot.innerHTML = "";
   }
 
@@ -240,8 +240,13 @@ class MammotionCard extends HTMLElement {
 
   set hass(hass) { const first = !this._hass; this._hass = hass; if (!this._built) this._build();
     this._applyTheme();
-    this._update(); if (first) { this._fetchHistory(); this._fetchWeek(); } }
-  connectedCallback() { this._tick = setInterval(() => { this._update(); if (Date.now() - this._fetchedAt > this._config.refresh * 1000) this._fetchHistory(); if (Date.now() - (this._weekAt || 0) > 3600000) { this._weekAt = Date.now(); this._fetchWeek(); } }, 20000); }
+    /* La camera suit chaque poussée ; le DOM, lui, ne bouge que si un état
+       affiché a réellement changé (signature — voir _stSig). */
+    const camEl = this._els.camSlot && this._els.camSlot._camEl; if (camEl) camEl.hass = hass;
+    const sig = this._stSig();
+    if (sig !== this._lastSig) { this._lastSig = sig; this._update(); }
+    if (first) { this._fetchHistory(); this._fetchWeek(); } }
+  connectedCallback() { this._tick = setInterval(() => { const sig = this._stSig(); if (sig !== this._lastSig) { this._lastSig = sig; this._update(); } if (Date.now() - this._fetchedAt > this._config.refresh * 1000) this._fetchHistory(); if (Date.now() - (this._weekAt || 0) > 3600000) { this._weekAt = Date.now(); this._fetchWeek(); } }, 20000); }
   disconnectedCallback() { if (this._tick) clearInterval(this._tick); this._tick = null; }
 
   _s(id) { return this._st(id)?.state ?? null; }
@@ -425,6 +430,7 @@ class MammotionCard extends HTMLElement {
     root.querySelectorAll(".ctl-slider").forEach((el) => {
       /* affichage local pendant le glissement */
       el.addEventListener("input", () => {
+        this._ctlTouch = Date.now();
         const ctl = el.closest(".ctl");
         const v = ctl.querySelector(".ctl-v");
         if (v) v.textContent = `${this._fmt(Number(el.value), el.step < 1 ? 2 : el.step < 10 ? 1 : 0)}${el.dataset.unit ? " " + el.dataset.unit : ""}`;
@@ -744,6 +750,24 @@ class MammotionCard extends HTMLElement {
     if (e.zonesMeta) { const totalArea = c.zones.reduce((a, z) => a + (this._num(z.area) || 0), 0); e.zonesMeta.textContent = `${c.zones.length} zone${c.zones.length > 1 ? "s" : ""}${totalArea ? ` · ${this._fmt(totalArea, 0)} m²` : ""}`; }
   }
 
+  /* Signature d'état : tous les identifiants d'entité de la configuration
+     (et la présence de l'historique) réduits à une valeur. Tant qu'elle ne
+     change pas, aucun re-rendu — les ~86 références de la config ne
+     reçoivent leurs poussées qu'au rythme de leurs propres états. */
+  _stSig() {
+    const c = this._config; const parts = [this._history ? "H" : "-"];
+    for (const k in c) {
+      const v = c[k];
+      if (typeof v === "string" && /^[a-z_]+\.[a-z0-9_]+$/i.test(v)) {
+        const s = this._st(v); parts.push(k, s ? s.state : "N");
+      } else if (k === "zones" && Array.isArray(v)) {
+        v.forEach((z, i) => ["entity", "area"].forEach((f) => { const id = z && z[f];
+          if (typeof id === "string") { const s = this._st(id); parts.push(i, f, s ? s.state : "N"); } }));
+      }
+    }
+    return parts.join("|");
+  }
+
   _update() {
     const c = this._config, e = this._els; if (!this._hass || !this._built) return;
     const mode = this._mode(), progress = this._progress(), batt = this._num(c.battery), rem = this._remainingMinutes();
@@ -780,9 +804,6 @@ class MammotionCard extends HTMLElement {
     const sr = this._sessionRatio();
     if (sr != null && sr > 0) sub.push(`session ${Math.round(sr * 100)} %`);
     const area = this._num(c.area); if (area != null) sub.push(`${this._fmt(area, 0)} m²`);
-    /* Le sub sort du cercle — la zone + session + surface font une seule
-       ligne trop longue pour 180px. On le descend dans la légende. */
-    e.legend.innerHTML = `${sub.length ? `<span class="mlg-sub">${esc(sub.join(" · "))}</span>` : ""}`;
     /* Légende des anneaux : chaque anneau a son libellé explicite —
        « 77 % tonte » au centre sans qualificatif prêtait à confusion
        avec la batterie. */
@@ -866,9 +887,13 @@ class MammotionCard extends HTMLElement {
       if (c.rain_detection_during) items.push(this._setControl("Pluie (pendant)", c.rain_detection_during));
       if (c.voice_gender) items.push(this._setControl("Genre de voix", c.voice_gender));
       if (c.voice_volume) items.push(this._setControl("Volume", c.voice_volume));
-      e.mowGrid.innerHTML = items.join("");
-      e.mowGrid.closest(".acc").classList.toggle("hidden", !items.length);
-      this._bindSetControls(e.mowGrid);
+      /* Un glissement en cours ne doit pas être détruit par la reconstruction
+         périodique : la section est gelée 5 s après le dernier toucher. */
+      if (!this._ctlTouch || Date.now() - this._ctlTouch > 5000) {
+        e.mowGrid.innerHTML = items.join("");
+        e.mowGrid.closest(".acc").classList.toggle("hidden", !items.length);
+        this._bindSetControls(e.mowGrid);
+      }
     }
 
     // Connexion et positionnement
