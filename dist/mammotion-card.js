@@ -7,7 +7,7 @@
  * https://github.com/junkoku38/mammotion-card
  */
 
-const CARD_VERSION = "3.1.3";
+const CARD_VERSION = "3.1.4";
 
 console.info(
   `%c MAMMOTION-CARD %c v${CARD_VERSION} `,
@@ -20,6 +20,7 @@ const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "
 const I = {
   mower: `<path d="M19.5 12c.28 0 .55.03.81.08L18.4 6.05A3 3 0 0 0 15.56 4H8.44a3 3 0 0 0-2.84 2.05L3.69 12.1c.26-.06.53-.1.81-.1A3.5 3.5 0 0 1 8 15.5c0 .17-.01.33-.04.5h8.08a3.5 3.5 0 0 1 3.46-4zM7.5 6h9l1.33 4H6.17L7.5 6zM4.5 13a2.5 2.5 0 1 0 0 5 2.5 2.5 0 0 0 0-5zm15 0a2.5 2.5 0 1 0 0 5 2.5 2.5 0 0 0 0-5z"/>`,
   alert: `<path d="M12 2 1 21h22L12 2zm0 5 7.5 12.9h-15L12 7zm-1 4v4h2v-4h-2zm0 5v2h2v-2h-2z"/>`,
+  batt: `<path d="M16.67 4H15V2H9v2H7.33A1.33 1.33 0 0 0 6 5.33v15.34C6 21.4 6.6 22 7.33 22h9.34c.73 0 1.33-.6 1.33-1.33V5.33C18 4.6 17.4 4 16.67 4Z"/>`,
 };
 
 const COL = { progress: "#c9f0a8", battery: "#7fb3ff", warn: "#ffc76b", alert: "#ff6b5c", dim: "rgba(255,255,255,.3)" };
@@ -779,13 +780,18 @@ class MammotionCard extends HTMLElement {
     e.dot.style.background = dotColor; e.dot.style.boxShadow = `0 0 8px ${dotColor}99`;
     const labels = { mowing: "Tonte", paused: "En pause", returning: "Retour base", docked: charging ? "En charge" : "À la base", error: "Erreur" };
     e.name.textContent = c.name; e.state.textContent = labels[mode];
+    /* Batterie : un chip avec icône toujours présent, en tête — en tonte,
+       le centre affiche le temps restant et l'anneau batterie (fin, 75 %
+       d'opacité) ne se remarque pas. Orange sous 20 %. */
+    const battChip = batt != null
+      ? `<span class="lk${batt <= 20 ? " batt-warn" : ""}"><svg class="lkico" viewBox="0 0 24 24">${I.batt}</svg>${Math.round(batt)} %</span>` : "";
     const chips = []; const rtk = this._txt(c.rtk_status, null); if (rtk) chips.push(rtk);
     const sat = this._num(c.satellites); if (sat != null) chips.push(`${Math.round(sat)} sat`);
     /* Pluie : si le capteur configuré tombe, la tonte s'arrêtera — autant
        le dire avant qu'elle le décide toute seule. */
     const rain = this._num(c.rain_sensor);
     if (rain != null && rain > 0.1) chips.push(`pluie ${this._fmt(rain, 1)} mm`);
-    e.chips.innerHTML = chips.map((t) => `<span class="lk${String(t).startsWith("pluie") ? " rain" : ""}">${esc(t)}</span>`).join("");
+    e.chips.innerHTML = battChip + chips.map((t) => `<span class="lk${String(t).startsWith("pluie") ? " rain" : ""}">${esc(t)}</span>`).join("");
     const C1 = 2 * Math.PI * 82, C2 = 2 * Math.PI * 66;
     e.ringProg.setAttribute("stroke-dasharray", `${(C1 * (progress ?? 0)).toFixed(1)} ${C1.toFixed(1)}`);
     e.ringBatt.setAttribute("stroke-dasharray", `${(C2 * ((batt ?? 0) / 100)).toFixed(1)} ${C2.toFixed(1)}`);
@@ -1069,8 +1075,10 @@ ha-card::after{content:"";position:absolute;left:20px;right:20px;top:0;height:1p
 .ms b{color:var(--mm-txt);font-weight:600;white-space:nowrap;}
 .md{width:6px;height:6px;border-radius:50%;flex-shrink:0;}
 .mk{display:flex;gap:5px;flex-shrink:0;}
-.lk{font-size:8.5px;font-weight:600;letter-spacing:.7px;color:var(--mm-dim);background:var(--mm-panel);border:1px solid var(--mm-border);border-radius:6px;padding:3px 6px;white-space:nowrap;}
+.lk{font-size:8.5px;font-weight:600;letter-spacing:.7px;color:var(--mm-dim);background:var(--mm-panel);border:1px solid var(--mm-border);border-radius:6px;padding:3px 6px;white-space:nowrap;display:inline-flex;align-items:center;}
+.lk .lkico{width:9px;height:9px;fill:currentColor;margin-right:4px;flex-shrink:0;}
 .lk.rain{background:rgba(127,179,255,.12);border-color:rgba(127,179,255,.35);color:#a8c9f0;}
+.lk.batt-warn{background:rgba(255,199,107,.15);border-color:rgba(255,199,107,.4);color:var(--mm-warn);}
 .mstage{position:relative;width:180px;margin:20px auto 0;z-index:1;cursor:pointer;}
 .dr{display:block;width:180px;height:180px;}
 .dr circle{transition:stroke-dasharray .6s ease,stroke .3s;}
