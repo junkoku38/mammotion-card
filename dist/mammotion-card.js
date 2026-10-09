@@ -7,7 +7,7 @@
  * https://github.com/junkoku38/mammotion-card
  */
 
-const CARD_VERSION = "3.1.1";
+const CARD_VERSION = "3.1.2";
 
 console.info(
   `%c MAMMOTION-CARD %c v${CARD_VERSION} `,
@@ -389,7 +389,7 @@ class MammotionCard extends HTMLElement {
         <span class="ctl-n">${esc(label)}</span>
         <span class="ctl-v">${Number.isNaN(v) ? "—" : this._fmt(v, step < 1 ? 2 : step < 10 ? 1 : 0)}${esc(unit ? " " + unit : "")}</span>
         <input type="range" min="${min}" max="${max}" step="${step}" value="${cur}"
-          data-id="${esc(id)}" data-kind="number" class="ctl-slider">
+          data-id="${esc(id)}" data-kind="number" data-unit="${esc(unit)}" class="ctl-slider">
       </div>`;
     }
     if (d === "select") {
@@ -418,8 +418,10 @@ class MammotionCard extends HTMLElement {
    * écrit une vraie commande à la tondeuse, pas une variable locale.
    */
   _bindSetControls(root) {
-    if (!root || root._bound) return;
-    root._bound = true;
+    /* Re-lier systematiquement : _update() reconstruit les éléments via
+       innerHTML, un garde-fou sur le conteneur laisserait les contrôleurs
+       recréés sans aucun listener (réglages inertes après premier rafraîchissement). */
+    if (!root) return;
     root.querySelectorAll(".ctl-slider").forEach((el) => {
       /* affichage local pendant le glissement */
       el.addEventListener("input", () => {
@@ -444,7 +446,14 @@ class MammotionCard extends HTMLElement {
        pas faire passer la carte en erreur. Hors tonte, le code prime sur
        l'état (Mammotion laisse parfois « paused » pendant une faute bloquante). */
     const errCode = this._txt(this._config.error_code, null);
-    const errActive = errCode && !["0","none","no_error","unknown","—","null",""].includes(norm(errCode));
+    /* Même règle que _hasRealError() : les codes 1000-2999 sont des codes
+       de session non bloquants (ex. « batterie faible, revenir charger »),
+       ils ne doivent pas passer la carte en erreur. */
+    const codeNum = errCode ? Number(norm(errCode)) : NaN;
+    const isSessionCode = !Number.isNaN(codeNum) && codeNum >= 1000 && codeNum <= 2999;
+    const errActive = errCode
+      && !isSessionCode
+      && !["0","none","no_error","unknown","—","null",""].includes(norm(errCode));
     const isMowing = MOW_WORDS.some((w) => v.includes(w));
     if (!isMowing && errActive) return "error";
     if (ERR_WORDS.some((w) => v.includes(w))) return "error";
@@ -588,7 +597,7 @@ class MammotionCard extends HTMLElement {
       // repli : image statique
       const cam = this._st(c.camera);
       const pic = cam?.attributes?.entity_picture;
-      if (pic) { host.innerHTML = `<img src="${pic}" style="width:100%;border-radius:12px"/>`; host._mounted = true; }
+      if (pic) { host.innerHTML = `<img src="${esc(pic)}" style="width:100%;border-radius:12px"/>`; host._mounted = true; }
     }
   }
 
@@ -713,8 +722,10 @@ class MammotionCard extends HTMLElement {
        à « comment elle tient ». */
     if (serieBatt && e.chartMeta) {
       const clean = serieBatt.filter((v) => v != null);
-      const delta = clean[clean.length-1] - clean[0];
-      const bits = [`${delta >= 0 ? "+" : "−"}${this._fmt(Math.abs(delta), 0)} % sur ${c.hours} h`];
+      const delta = clean.length >= 2 ? clean[clean.length-1] - clean[0] : null;
+      const bits = delta != null
+        ? [`${delta >= 0 ? "+" : "−"}${this._fmt(Math.abs(delta), 0)} % sur ${c.hours} h`]
+        : [];
       const m = this._mowingMargin();
       if (m) bits.push(`marge ~${this._dur(m.hours * 60)}`);
       e.chartMeta.textContent = bits.join(" · ");
@@ -755,7 +766,7 @@ class MammotionCard extends HTMLElement {
     e.ringProg.setAttribute("stroke-dasharray", `${(C1 * (progress ?? 0)).toFixed(1)} ${C1.toFixed(1)}`);
     e.ringBatt.setAttribute("stroke-dasharray", `${(C2 * ((batt ?? 0) / 100)).toFixed(1)} ${C2.toFixed(1)}`);
     e.ringBatt.setAttribute("stroke", batt != null && batt <= 20 ? warn : blue);
-    if (mode === "mowing" && rem != null) { const h = Math.floor(rem / 60), m = Math.round(rem % 60); e.big.innerHTML = h > 0 ? `${h}<span>h</span>${String(m).padStart(2,"0")}` : `${m}<span>min</span>`; }
+    if (mode === "mowing" && rem != null) { const t = Math.round(rem), h = Math.floor(t / 60), m = t % 60; e.big.innerHTML = h > 0 ? `${h}<span>h</span>${String(m).padStart(2,"0")}` : `${m}<span>min</span>`; }
     else if (mode === "mowing" && progress != null) e.big.innerHTML = `${Math.round(progress * 100)}<span>%</span>`;
     else if (batt != null) e.big.innerHTML = `${Math.round(batt)}<span>%</span>`;
     else e.big.textContent = labels[mode];
